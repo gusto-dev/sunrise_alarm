@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../services/quote_service.dart';
+import '../l10n/app_localizations.dart';
 
 class AlarmScreen extends StatefulWidget {
   const AlarmScreen({super.key});
@@ -36,14 +37,14 @@ class _AlarmScreenState extends State<AlarmScreen> {
       await player.stop();
       _ringing = false;
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('해제 완료! 좋은 하루 ✨')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).released)),
+      );
       Navigator.of(context).pop();
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('조금만 더 정확히 입력해봐요!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).almostThere)),
+      );
     }
   }
 
@@ -63,7 +64,9 @@ class _AlarmScreenState extends State<AlarmScreen> {
         if (!mounted) return;
         // 울리는 중에는 뒤로가기를 막고 안내를 표시
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('알람을 멈추려면 아래 "멈춤" 버튼을 누르세요.')),
+          SnackBar(
+            content: Text(AppLocalizations.of(context).cantGoBackRinging),
+          ),
         );
       },
       child: Scaffold(
@@ -75,7 +78,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
               children: [
                 const Spacer(),
                 Text(
-                  '알람 해제: 아래 문장을 그대로 입력하세요',
+                  AppLocalizations.of(context).unlockGuide,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
@@ -96,7 +99,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: _tryStop,
-                        child: const Text('해제'),
+                        child: Text(AppLocalizations.of(context).unlock),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -107,7 +110,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                           foregroundColor: Colors.white,
                         ),
                         onPressed: _forceStop,
-                        child: const Text('멈춤'),
+                        child: Text(AppLocalizations.of(context).stop),
                       ),
                     ),
                   ],

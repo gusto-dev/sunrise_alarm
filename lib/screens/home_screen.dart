@@ -7,10 +7,12 @@ import '../services/sunrise_service.dart';
 import '../services/alarm_service.dart';
 import '../services/timezone_service.dart';
 import '../main.dart';
+import '../l10n/app_localizations.dart';
 import '../utils/formatters.dart' as fmt;
 import '../utils/toast.dart' show showTopToast;
 import '../widgets/reserved_alarm_card.dart';
 import '../models/schedule_result.dart';
+import '../services/settings_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -71,14 +73,14 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!enabled) {
       setState(() {
         _busy = false;
-        _error = '위치 서비스가 꺼져 있어요. 위치 서비스를 켠 뒤 다시 시도해 주세요.';
+        _error = AppLocalizations.of(context).locationServiceOffDetail;
       });
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('위치 서비스가 꺼져 있어요.'),
+          content: Text(AppLocalizations.of(context).locationServiceOffShort),
           action: SnackBarAction(
-            label: '설정 열기',
+            label: AppLocalizations.of(context).openSettings,
             onPressed: () {
               Geolocator.openLocationSettings();
             },
@@ -97,14 +99,16 @@ class _HomeScreenState extends State<HomeScreen> {
         perm == LocationPermission.denied) {
       setState(() {
         _busy = false;
-        _error = '위치 권한이 필요합니다. 앱 설정에서 권한을 허용해 주세요.';
+        _error = AppLocalizations.of(context).locationPermissionRequiredDetail;
       });
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('위치 권한이 필요합니다.'),
+          content: Text(
+            AppLocalizations.of(context).locationPermissionRequiredShort,
+          ),
           action: SnackBarAction(
-            label: '앱 설정',
+            label: AppLocalizations.of(context).appSettings,
             onPressed: () {
               Geolocator.openAppSettings();
             },
@@ -156,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (last == null) {
           setState(() {
             _busy = false;
-            _error = '현재 위치를 가져오지 못했습니다. 잠시 후 다시 시도하거나 야외에서 시도해 주세요.';
+            _error = AppLocalizations.of(context).couldNotGetLocation;
           });
           return;
         }
@@ -194,6 +198,13 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           place = city;
+          // 위치 기반 로케일 설정 (KR이면 한국어, 그 외 영어)
+          final code = (p.isoCountryCode ?? '').toUpperCase();
+          if (code == 'KR') {
+            appLocale.value = const Locale('ko');
+          } else {
+            appLocale.value = const Locale('en');
+          }
         }
       } catch (_) {
         // 역지오코딩 실패는 무시 (라벨만 비워둠)
@@ -226,13 +237,23 @@ class _HomeScreenState extends State<HomeScreen> {
       });
 
       // 현지 시간대 기준 라이트/다크 모드 전환 (06:00~18:00 라이트, 그 외 다크)
-      final nowLocal = tz.TZDateTime.now(targetLoc);
-      final isDay = nowLocal.hour >= 6 && nowLocal.hour < 18;
-      appThemeMode.value = isDay ? ThemeMode.light : ThemeMode.dark;
+      // 단, 사용자 설정이 'auto'일 때만 자동 전환 수행
+      final pref = await SettingsService.getThemeModePref();
+      if (pref == 'auto') {
+        final nowLocal = tz.TZDateTime.now(targetLoc);
+        final isDay = nowLocal.hour >= 6 && nowLocal.hour < 18;
+        appThemeMode.value = isDay ? ThemeMode.light : ThemeMode.dark;
+      }
     } on TimeoutException catch (_) {
-      setState(() => _error = '네트워크가 느려 일출 시간을 가져오지 못했습니다. 다시 시도해 주세요.');
+      setState(
+        () => _error = AppLocalizations.of(context).networkSlowSunriseFail,
+      );
     } catch (e) {
-      setState(() => _error = '오류: $e');
+      setState(
+        () => _error = AppLocalizations.of(
+          context,
+        ).errorWithMessage(e.toString()),
+      );
     } finally {
       setState(() => _busy = false);
     }
@@ -283,12 +304,19 @@ class _HomeScreenState extends State<HomeScreen> {
       _offsetMinutes,
     );
     await AlarmService.cancel();
-    await AlarmService.scheduleAtZoned(res.scheduled, _targetLoc!);
+    final l10n = AppLocalizations.of(context);
+    await AlarmService.scheduleAtZoned(
+      res.scheduled,
+      _targetLoc!,
+      title: l10n.notifSunriseTitle,
+      body: l10n.notifSunriseBody,
+    );
     setState(() {
       _lastScheduledAlarmLocal = res.scheduled;
     });
     if (!mounted) return;
-    showTopToast(context, '알람을 예약했어요.');
+    if (!mounted) return;
+    showTopToast(context, AppLocalizations.of(context).alarmReservedToast);
   }
 
   Future<bool> _confirm({
@@ -320,6 +348,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return res ?? false;
   }
 
+  String _offsetLabel(AppLocalizations l10n) {
+    if (_offsetMinutes == 0) return l10n.offsetExact;
+    if (_offsetMinutes < 0) {
+      return l10n.offsetBeforeMinutes((-_offsetMinutes).toString());
+    }
+    return l10n.offsetAfterMinutes(_offsetMinutes.toString());
+  }
+
   Widget _buildReservedSection() {
     return ReservedAlarmCard(
       scheduled: _lastScheduledAlarmLocal,
@@ -328,10 +364,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ? null
           : () async {
               final ok = await _confirm(
-                title: '알람 삭제',
-                message: '예약된 알람을 삭제할까요?',
-                confirmText: '삭제',
-                cancelText: '유지',
+                title: AppLocalizations.of(context).confirmDeleteTitle,
+                message: AppLocalizations.of(context).confirmDeleteMsg,
+                confirmText: AppLocalizations.of(context).delete,
+                cancelText: AppLocalizations.of(context).keep,
               );
               if (!ok) return;
               await AlarmService.cancel();
@@ -339,7 +375,10 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() {
                 _lastScheduledAlarmLocal = null;
               });
-              showTopToast(context, '알람을 삭제했어요.');
+              showTopToast(
+                context,
+                AppLocalizations.of(context).alarmDeletedToast,
+              );
             },
     );
   }
@@ -347,7 +386,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sunrise Alarm')),
+      appBar: AppBar(
+        title: Text(AppLocalizations.of(context).appTitle),
+        actions: [
+          IconButton(
+            tooltip: AppLocalizations.of(context).settingsTooltip,
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.of(context).pushNamed('/settings'),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -396,7 +444,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   side: const BorderSide(color: Colors.white70),
                                 ),
                                 onPressed: _busy ? null : _prepare,
-                                child: const Text('다시 시도'),
+                                child: Text(AppLocalizations.of(context).retry),
                               ),
                             ] else ...[
                               Container(
@@ -410,9 +458,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ).withValues(alpha: 0.18),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
-                                child: const Text(
-                                  '다음 일출',
-                                  style: TextStyle(
+                                child: Text(
+                                  AppLocalizations.of(context).nextSunrise,
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -429,18 +477,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                     size: 64,
                                   ),
                                   const SizedBox(width: 12),
-                                  Text(
-                                    nextSunriseLocal != null
-                                        ? fmt.fmtHM(nextSunriseLocal!)
-                                        : '--:--',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .displayLarge
-                                        ?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 64,
-                                        ),
+                                  ValueListenableBuilder<bool>(
+                                    valueListenable: appTime24h,
+                                    builder: (context, is24h, __) {
+                                      final text = nextSunriseLocal != null
+                                          ? (is24h
+                                                ? fmt.fmtHM(nextSunriseLocal!)
+                                                : fmt.fmtJmIntl(
+                                                    nextSunriseLocal!,
+                                                    Localizations.localeOf(
+                                                      context,
+                                                    ),
+                                                  ))
+                                          : '--:--';
+                                      return Text(
+                                        text,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .displayLarge
+                                            ?.copyWith(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 64,
+                                            ),
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
@@ -448,7 +509,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               Column(
                                 children: [
                                   Text(
-                                    fmt.fmtYMDW(DateTime.now()),
+                                    fmt.fmtYMDWIntl(
+                                      DateTime.now(),
+                                      Localizations.localeOf(context),
+                                    ),
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleMedium
@@ -491,11 +555,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '알람 시각',
+                          AppLocalizations.of(context).alarmTime,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         Text(
-                          '일출 ${fmt.offsetHuman(_offsetMinutes)}',
+                          '${AppLocalizations.of(context).nextSunrise.split(' ').first} ${_offsetLabel(AppLocalizations.of(context))}',
                           style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(
                                 color: Theme.of(
@@ -510,7 +574,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       max: 60,
                       divisions: 24, // 5분 단위 (총 120/5)
                       value: _offsetMinutes.toDouble(),
-                      label: fmt.offsetHuman(_offsetMinutes),
+                      label: _offsetLabel(AppLocalizations.of(context)),
                       onChanged: (v) {
                         setState(() {
                           _offsetMinutes = (v / 5).round() * 5;
@@ -534,14 +598,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               ).colorScheme.onSurfaceVariant,
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              '예상 울림 ${fmt.fmtHM(res.scheduled)}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
+                            ValueListenableBuilder<bool>(
+                              valueListenable: appTime24h,
+                              builder: (context, is24h, __) {
+                                final timeText = is24h
+                                    ? fmt.fmtHM(res.scheduled)
+                                    : fmt.fmtJmIntl(
+                                        res.scheduled,
+                                        Localizations.localeOf(context),
+                                      );
+                                return Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  ).previewRing(timeText),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                );
+                              },
                             ),
                           ],
                         );
@@ -559,7 +636,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? null
                     : () async {
                         // Confirm before scheduling
-                        String off = fmt.offsetHuman(_offsetMinutes);
+                        final l10n = AppLocalizations.of(context);
+                        final off = _offsetLabel(l10n);
                         tz.TZDateTime? preview;
                         if (nextSunriseLocal != null && _targetLoc != null) {
                           preview = _computeScheduleNormalized(
@@ -569,12 +647,20 @@ class _HomeScreenState extends State<HomeScreen> {
                           ).scheduled;
                         }
                         final ok = await _confirm(
-                          title: '알람 예약',
+                          title: l10n.confirmReserveTitle,
                           message: preview == null
-                              ? '알람을 예약할까요?\n(일출 $off)'
-                              : '알람을 예약할까요?\n(일출 $off, 예상 울림 ${fmt.fmtHM(preview)})',
-                          confirmText: '예약',
-                          cancelText: '취소',
+                              ? l10n.confirmReserveMsgExact(off)
+                              : l10n.confirmReserveMsg(
+                                  off,
+                                  (appTime24h.value
+                                      ? fmt.fmtHM(preview)
+                                      : fmt.fmtJmIntl(
+                                          preview,
+                                          Localizations.localeOf(context),
+                                        )),
+                                ),
+                          confirmText: l10n.reserve,
+                          cancelText: l10n.cancel,
                         );
                         if (ok) {
                           await _addNewAlarmFromCurrent();
@@ -590,7 +676,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                child: const Text('알람 예약'),
+                child: Text(AppLocalizations.of(context).reserveAlarm),
               ),
             ),
             const SizedBox(height: 16),

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:timezone/timezone.dart' as tz;
+import '../l10n/app_localizations.dart';
+import '../utils/formatters.dart' as fmt;
+import '../main.dart';
 
 class ReservedAlarmCard extends StatelessWidget {
   final DateTime? scheduled;
@@ -13,34 +16,19 @@ class ReservedAlarmCard extends StatelessWidget {
     required this.onDelete,
   });
 
-  String _remainText(DateTime when, {tz.Location? loc}) {
+  String _remainText(BuildContext context, DateTime when, {tz.Location? loc}) {
+    final l10n = AppLocalizations.of(context);
     final now = loc != null ? tz.TZDateTime.now(loc) : DateTime.now();
     Duration diff = when.difference(now);
     if (diff.isNegative) diff = -diff;
-    if (diff.inMinutes < 1) return '곧 울림';
+    if (diff.inMinutes < 1) return l10n.remainSoon;
     final d = diff.inDays;
     final h = diff.inHours % 24;
     final m = diff.inMinutes % 60;
-    final parts = <String>[];
-    if (d > 0) parts.add('$d일');
-    if (h > 0) parts.add('$h시간');
-    if (m > 0) parts.add('$m분');
-    return '${parts.join(' ')} 남음';
-  }
-
-  String _fmtHM(DateTime dt) {
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
-  String _fmtYMDW(DateTime dt) {
-    const wk = ['월', '화', '수', '목', '금', '토', '일'];
-    final y = dt.year.toString().padLeft(4, '0');
-    final mo = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    final w = wk[(dt.weekday - 1) % 7];
-    return '$y.$mo.$d($w)';
+    final days = d > 0 ? l10n.remainDays(d.toString()) : '';
+    final hours = h > 0 ? l10n.remainHours(h.toString()) : '';
+    final mins = m > 0 ? l10n.remainMinutes(m.toString()) : '';
+    return l10n.remain(days, hours, mins);
   }
 
   @override
@@ -66,7 +54,7 @@ class ReservedAlarmCard extends StatelessWidget {
               Icon(Icons.alarm_off, color: scheme.onSurfaceVariant, size: 34),
               const SizedBox(width: 8),
               Text(
-                '아직 예약된 알람이 없어요',
+                AppLocalizations.of(context).noReserved,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -100,17 +88,28 @@ class ReservedAlarmCard extends StatelessWidget {
                   children: [
                     Icon(Icons.alarm, color: scheme.onSurface, size: 40),
                     const SizedBox(width: 10),
-                    Text(
-                      _fmtHM(scheduled!),
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: appTime24h,
+                      builder: (context, is24h, __) {
+                        final t = is24h
+                            ? fmt.fmtHM(scheduled!)
+                            : fmt.fmtJmIntl(
+                                scheduled!,
+                                Localizations.localeOf(context),
+                              );
+                        return Text(
+                          t,
+                          style: theme.textTheme.displaySmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _fmtYMDW(scheduled!),
+                  fmt.fmtYMDWIntl(scheduled!, Localizations.localeOf(context)),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -132,9 +131,13 @@ class ReservedAlarmCard extends StatelessWidget {
                     );
                   },
                   child: Text(
-                    _remainText(scheduled!, loc: location ?? tz.local),
+                    _remainText(context, scheduled!, loc: location ?? tz.local),
                     key: ValueKey(
-                      _remainText(scheduled!, loc: location ?? tz.local),
+                      _remainText(
+                        context,
+                        scheduled!,
+                        loc: location ?? tz.local,
+                      ),
                     ),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
@@ -149,7 +152,7 @@ class ReservedAlarmCard extends StatelessWidget {
           right: 4,
           top: 4,
           child: IconButton(
-            tooltip: '삭제',
+            tooltip: AppLocalizations.of(context).delete,
             icon: const Icon(Icons.delete_outline),
             onPressed: onDelete,
           ),

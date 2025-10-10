@@ -130,7 +130,11 @@ class AlarmService {
   }
 
   /// 지정된 시간(localTime)에 알람 예약
-  static Future<void> scheduleAt(DateTime localTime) async {
+  static Future<void> scheduleAt(
+    DateTime localTime, {
+    String? title,
+    String? body,
+  }) async {
     var tzTime = tz.TZDateTime.from(localTime, tz.local);
     final now = tz.TZDateTime.now(tz.local);
     if (!tzTime.isAfter(now)) {
@@ -140,8 +144,8 @@ class AlarmService {
 
     await notifications.zonedSchedule(
       _id,
-      '일출 알람',
-      '좋은 하루 시작해요 ☀️',
+      title ?? '일출 알람',
+      body ?? '좋은 하루 시작해요 ☀️',
       tzTime,
       NotificationDetails(
         android: AndroidNotificationDetails(
@@ -169,8 +173,8 @@ class AlarmService {
         id: _id,
         scheduled: tzTime.toUtc(),
         tzName: tz.local.name,
-        title: '일출 알람',
-        body: '좋은 하루 시작해요 ☀️',
+        title: title ?? '일출 알람',
+        body: body ?? '좋은 하루 시작해요 ☀️',
       ),
     );
     await _saveList(items);
@@ -180,8 +184,8 @@ class AlarmService {
   static Future<int> scheduleNew(
     DateTime localTime, {
     tz.Location? location,
-    String title = '일출 알람',
-    String body = '좋은 하루 시작해요 ☀️',
+    String? title,
+    String? body,
   }) async {
     final id = await _nextId();
     final loc = location ?? tz.local;
@@ -194,8 +198,8 @@ class AlarmService {
 
     await notifications.zonedSchedule(
       id,
-      title,
-      body,
+      title ?? '일출 알람',
+      body ?? '좋은 하루 시작해요 ☀️',
       tzTime,
       NotificationDetails(
         android: AndroidNotificationDetails(
@@ -220,8 +224,8 @@ class AlarmService {
         id: id,
         scheduled: tzTime.toUtc(),
         tzName: loc.name,
-        title: title,
-        body: body,
+        title: title ?? '일출 알람',
+        body: body ?? '좋은 하루 시작해요 ☀️',
       ),
     );
     await _saveList(items);
@@ -231,8 +235,10 @@ class AlarmService {
   /// 지정된 시간([localTime])을 주어진 [location] 시간대로 해석하여 예약
   static Future<void> scheduleAtZoned(
     DateTime localTime,
-    tz.Location location,
-  ) async {
+    tz.Location location, {
+    String? title,
+    String? body,
+  }) async {
     var tzTime = tz.TZDateTime.from(localTime, location);
     final now = tz.TZDateTime.now(location);
     if (!tzTime.isAfter(now)) {
@@ -241,8 +247,8 @@ class AlarmService {
 
     await notifications.zonedSchedule(
       _id,
-      '일출 알람',
-      '좋은 하루 시작해요 ☀️',
+      title ?? '일출 알람',
+      body ?? '좋은 하루 시작해요 ☀️',
       tzTime,
       NotificationDetails(
         android: AndroidNotificationDetails(
@@ -269,8 +275,8 @@ class AlarmService {
         id: _id,
         scheduled: tzTime.toUtc(),
         tzName: location.name,
-        title: '일출 알람',
-        body: '좋은 하루 시작해요 ☀️',
+        title: title ?? '일출 알람',
+        body: body ?? '좋은 하루 시작해요 ☀️',
       ),
     );
     await _saveList(items);
@@ -299,11 +305,11 @@ class AlarmService {
   }
 
   /// [진단] 즉시 알림 표시 (채널/권한 문제 점검용)
-  static Future<void> debugShowNow() async {
+  static Future<void> debugShowNow({String? title, String? body}) async {
     await notifications.show(
       _id,
-      '테스트 알림',
-      '채널/권한 동작 확인',
+      title ?? '테스트 알림',
+      body ?? '채널/권한 동작 확인',
       NotificationDetails(
         android: AndroidNotificationDetails(
           'sunrise_channel_v2',

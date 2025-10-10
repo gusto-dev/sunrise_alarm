@@ -6,12 +6,19 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/alarm_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/settings_service.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 final notifications = FlutterLocalNotificationsPlugin();
 // 앱 전역 테마 모드 (라이트/다크 동적 전환)
 final appThemeMode = ValueNotifier<ThemeMode>(ThemeMode.light);
+// 앱 전역 로케일 (위치 기반으로 동적 전환). null이면 시스템 기본
+final appLocale = ValueNotifier<Locale?>(null);
+// 앱 전역 시간 형식 (true: 24시간, false: 12시간)
+final appTime24h = ValueNotifier<bool>(true);
 
 Future<void> initTimeZone() async {
   tzdata.initializeTimeZones();
@@ -62,6 +69,24 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initTimeZone();
   await _initNotifications();
+
+  // Load saved user preferences before building UI
+  final langPref = await SettingsService.getLanguageOverride();
+  if (langPref != 'system') {
+    appLocale.value = Locale(langPref);
+  }
+  final themePref = await SettingsService.getThemeModePref();
+  switch (themePref) {
+    case 'light':
+      appThemeMode.value = ThemeMode.light;
+      break;
+    case 'dark':
+      appThemeMode.value = ThemeMode.dark;
+      break;
+    default:
+      appThemeMode.value = ThemeMode.system;
+  }
+  appTime24h.value = await SettingsService.getTimeFormat24h();
 
   // 알람(알림)으로 인해 앱이 실행되었는지 확인하고, 실행 직후 알람 화면으로 이동
   final launchDetails = await notifications.getNotificationAppLaunchDetails();
@@ -145,15 +170,29 @@ class MyApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: appThemeMode,
       builder: (context, mode, _) {
-        return MaterialApp(
-          title: 'Sunrise Alarm',
-          theme: light,
-          darkTheme: dark,
-          themeMode: mode,
-          navigatorKey: navigatorKey,
-          routes: {
-            '/': (_) => const HomeScreen(),
-            '/alarm': (_) => const AlarmScreen(),
+        return ValueListenableBuilder<Locale?>(
+          valueListenable: appLocale,
+          builder: (context, loc, __) {
+            return MaterialApp(
+              onGenerateTitle: (ctx) => AppLocalizations.of(ctx).appTitle,
+              theme: light,
+              darkTheme: dark,
+              themeMode: mode,
+              navigatorKey: navigatorKey,
+              locale: loc,
+              localizationsDelegates: [
+                AppLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: const [Locale('ko'), Locale('en')],
+              routes: {
+                '/': (_) => const HomeScreen(),
+                '/alarm': (_) => const AlarmScreen(),
+                '/settings': (_) => const SettingsScreen(),
+              },
+            );
           },
         );
       },
