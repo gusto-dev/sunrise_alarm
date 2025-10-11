@@ -1,16 +1,16 @@
 {
   "@@locale": "ko",
   "appTitle": "Sunrise Alarm",
-  "nextSunrise": "다음 일출",
+  "nextSunrise": "일출",
   "retry": "다시 시도",
   "alarmTime": "알람 시각",
-  "offsetExact": "정각",
+  "offsetExact": "일출",
   "offsetBeforeMinutes": "{minutes}분 전",
   "offsetAfterMinutes": "{minutes}분 후",
   "previewRing": "예상 울림 {time}",
   "reserveAlarm": "알람 예약",
   "confirmReserveTitle": "알람 예약",
-  "confirmReserveMsgExact": "알람을 예약할까요? (일출 {offset})",
+  "confirmReserveMsgExact": "알람을 예약할까요? ({offset})",
   "confirmReserveMsg": "알람을 예약할까요? (일출 {offset}, 예상 울림 {time})",
   "reserve": "예약",
   "cancel": "취소",
@@ -56,12 +56,25 @@
     "settingsTooltip": "설정"
     ,
     "settingsTestAlarm": "알람 테스트",
-    "settingsTestAlarmDesc": "10초 후 알람이 울립니다.",
+  "settingsTestAlarmDesc": "테스트 알람이 바로 울립니다.",
     "settingsRun": "실행",
-    "testAlarmScheduledToast": "테스트 알람을 예약했어요. (10초 후)"
+  "testAlarmScheduledToast": "테스트 알람을 예약했어요."
     ,
     "notifSunriseTitle": "일출 알람",
     "notifSunriseBody": "좋은 하루 시작해요 ☀️",
     "notifTestTitle": "테스트 알림",
     "notifTestBody": "채널/권한 동작 확인"
+    ,
+    "notifChannelName": "일출 알람",
+    "notifChannelDesc": "일출 알람 알림",
+    "alarmActionStop": "멈춤",
+    "settingsNotifSound": "알림 사운드",
+    "settingsNotifVibration": "진동 패턴",
+    "soundDefault": "기본",
+  "soundGoodMorning": "굿모닝",
+  "soundWakeUp": "웨이크업",
+  "soundMorningTriumph": "모닝 트라이엄프",
+    "vibOff": "끄기",
+    "vibShort": "짧게",
+    "vibLong": "길게"
 }

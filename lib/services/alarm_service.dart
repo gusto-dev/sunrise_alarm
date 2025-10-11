@@ -3,6 +3,11 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import '../main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'settings_service.dart';
+import 'dart:typed_data';
+import 'foreground_alarm_overlay.dart';
 
 class ScheduledAlarm {
   final int id;
@@ -92,6 +97,10 @@ class ScheduledAlarm {
 }
 
 class AlarmService {
+  // If you add custom iOS notification sounds to the iOS app bundle
+  // (Runner target), set this to true and ensure file names match the
+  // mapping in _iosSoundFileName(). Recommended formats: .aiff/.caf, <30s.
+  static const bool kIosCustomSoundsAvailable = false;
   static const String _prefsKeyList = 'scheduled_alarms_v1';
   static const String _prefsKeyLastId = 'scheduled_alarms_last_id_v1';
 
@@ -129,6 +138,175 @@ class AlarmService {
     await p.setString(_prefsKeyList, raw);
   }
 
+  static Future<String> _ensureAndroidChannelForSettings() async {
+    final lang =
+        appLocale.value?.languageCode ??
+        WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+    final channelName = (lang == 'ko') ? '일출 알람' : 'Sunrise Alarm';
+    final channelDesc = (lang == 'ko')
+        ? '일출 알림'
+        : 'Sunrise alarm notifications';
+
+    final soundKey = await SettingsService.getNotificationSound();
+    final channelId = 'sunrise_channel_${lang}_$soundKey';
+
+    final androidImpl = notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidImpl != null) {
+      try {
+        final AndroidNotificationSound? chSound = soundKey == 'default'
+            ? null
+            : RawResourceAndroidNotificationSound(soundKey);
+        await androidImpl.createNotificationChannel(
+          AndroidNotificationChannel(
+            channelId,
+            channelName,
+            description: channelDesc,
+            importance: Importance.max,
+            playSound: true,
+            sound: chSound,
+            // Keep vibration enabled; pattern can be set per-notification
+            enableVibration: true,
+          ),
+        );
+      } catch (e) {
+        if (_isInvalidSoundError(e)) {
+          // reset to default and create default channel
+          await SettingsService.setNotificationSound('default');
+          final fallbackId = 'sunrise_channel_${lang}_default';
+          await androidImpl.createNotificationChannel(
+            AndroidNotificationChannel(
+              fallbackId,
+              channelName,
+              description: channelDesc,
+              importance: Importance.max,
+              playSound: true,
+            ),
+          );
+          return fallbackId;
+        }
+        rethrow;
+      }
+    }
+    return channelId;
+  }
+
+  static Future<NotificationDetails> _buildDetails({
+    bool forceDefaultSound = false,
+  }) async {
+    // Ensure a channel exists that matches current settings (Android 8+ uses channel sound)
+    String channelId;
+    if (forceDefaultSound) {
+      // Create/ensure a default-sound channel for current locale
+      final lang =
+          appLocale.value?.languageCode ??
+          WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+      final androidImpl = notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      final channelName = (lang == 'ko') ? '일출 알람' : 'Sunrise Alarm';
+      final channelDesc = (lang == 'ko')
+          ? '일출 알림'
+          : 'Sunrise alarm notifications';
+      final fallbackId = 'sunrise_channel_${lang}_default';
+      await androidImpl?.createNotificationChannel(
+        AndroidNotificationChannel(
+          fallbackId,
+          channelName,
+          description: channelDesc,
+          importance: Importance.max,
+          playSound: true,
+        ),
+      );
+      channelId = fallbackId;
+    } else {
+      channelId = await _ensureAndroidChannelForSettings();
+    }
+    final vibKey = await SettingsService.getVibrationPattern();
+
+    // Do not set per-notification sound on Android 8+; channel controls sound.
+
+    Int64List? vibrationPattern;
+    bool enableVibration = vibKey != 'off';
+    switch (vibKey) {
+      case 'short':
+        vibrationPattern = Int64List.fromList([0, 200, 100, 200]);
+        break;
+      case 'long':
+        vibrationPattern = Int64List.fromList([0, 800, 200, 800]);
+        break;
+      case 'pattern':
+        vibrationPattern = Int64List.fromList([
+          0,
+          300,
+          150,
+          300,
+          400,
+          150,
+          600,
+        ]);
+        break;
+      case 'off':
+      default:
+        vibrationPattern = null;
+        break;
+    }
+
+    final lang2 =
+        appLocale.value?.languageCode ??
+        WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+    final channelName = (lang2 == 'ko') ? '일출 알람' : 'Sunrise Alarm';
+    final channelDesc = (lang2 == 'ko')
+        ? '일출 알림'
+        : 'Sunrise alarm notifications';
+
+    final android = AndroidNotificationDetails(
+      channelId,
+      channelName,
+      channelDescription: channelDesc,
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: enableVibration,
+      vibrationPattern: vibrationPattern,
+      category: AndroidNotificationCategory.alarm,
+      // Do not auto-open a full-screen activity; keep it as a standard heads-up
+      fullScreenIntent: false,
+    );
+    // iOS: default sound; custom sounds can be added later by bundling files
+    // into the Runner target and wiring sound filename here.
+    final ios = const DarwinNotificationDetails(
+      categoryIdentifier: 'SUNRISE_ALARM',
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    return NotificationDetails(android: android, iOS: ios);
+  }
+
+  // Map our logical sound keys to iOS bundle file names (without path).
+  // Provide files like good_morning.caf, wake_up.caf, morning_triumph.caf
+  // inside the iOS Runner target and ensure they are in the app bundle.
+  // static String? _iosSoundFileName(String key) {
+  //   switch (key) {
+  //     case 'good_morning':
+  //       return 'good_morning.caf';
+  //     case 'wake_up':
+  //       return 'wake_up.caf';
+  //     case 'morning_triumph':
+  //       return 'morning_triumph.caf';
+  //     default:
+  //       return null; // use system default sound
+  //   }
+  // }
+
+  static bool _isInvalidSoundError(Object e) {
+    return e is PlatformException && e.code == 'invalid_sound';
+  }
+
   /// 지정된 시간(localTime)에 알람 예약
   static Future<void> scheduleAt(
     DateTime localTime, {
@@ -142,28 +320,39 @@ class AlarmService {
       tzTime = now.add(const Duration(seconds: 2));
     }
 
-    await notifications.zonedSchedule(
-      _id,
-      title ?? '일출 알람',
-      body ?? '좋은 하루 시작해요 ☀️',
-      tzTime,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          'sunrise_channel_v2',
-          'Sunrise',
-          channelDescription: 'Sunrise alarms',
-          priority: Priority.high,
-          importance: Importance.max,
-          fullScreenIntent: true, // 화면을 깨우도록
-          category: AndroidNotificationCategory.alarm,
-          sound: const RawResourceAndroidNotificationSound('alarm'),
-        ),
-        // iOS에서 기본 사운드 사용. 별도 사운드 파일 추가 시 sound 지정.
-        iOS: const DarwinNotificationDetails(),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: 'sunrise',
-    );
+    try {
+      final details = await _buildDetails();
+      final epochMsUtc = tzTime.toUtc().millisecondsSinceEpoch;
+      await notifications.zonedSchedule(
+        _id,
+        title ?? '일출 알람',
+        body ?? '좋은 하루 시작해요 ☀️',
+        tzTime,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: 'sunrise:$_id:$epochMsUtc',
+      );
+      // Arm foreground overlay timer for the legacy single alarm ID
+      ForegroundAlarmOverlay.arm(tzTime, alarmId: _id);
+    } catch (e) {
+      if (_isInvalidSoundError(e)) {
+        // Fallback to default sound and persist preference to avoid future crashes
+        await SettingsService.setNotificationSound('default');
+        final details = await _buildDetails(forceDefaultSound: true);
+        await notifications.zonedSchedule(
+          _id,
+          title ?? '일출 알람',
+          body ?? '좋은 하루 시작해요 ☀️',
+          tzTime,
+          details,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          payload: 'sunrise:$_id:${tzTime.toUtc().millisecondsSinceEpoch}',
+        );
+        ForegroundAlarmOverlay.arm(tzTime, alarmId: _id);
+      } else {
+        rethrow;
+      }
+    }
 
     // Persist/Upsert legacy alarm into list
     final items = await list();
@@ -196,27 +385,37 @@ class AlarmService {
       tzTime = now.add(const Duration(seconds: 2));
     }
 
-    await notifications.zonedSchedule(
-      id,
-      title ?? '일출 알람',
-      body ?? '좋은 하루 시작해요 ☀️',
-      tzTime,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          'sunrise_channel_v2',
-          'Sunrise',
-          channelDescription: 'Sunrise alarms',
-          priority: Priority.high,
-          importance: Importance.max,
-          fullScreenIntent: true,
-          category: AndroidNotificationCategory.alarm,
-          sound: const RawResourceAndroidNotificationSound('alarm'),
-        ),
-        iOS: const DarwinNotificationDetails(),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: 'sunrise',
-    );
+    try {
+      final details = await _buildDetails();
+      final epochMsUtc = tzTime.toUtc().millisecondsSinceEpoch;
+      await notifications.zonedSchedule(
+        id,
+        title ?? '일출 알람',
+        body ?? '좋은 하루 시작해요 ☀️',
+        tzTime,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: 'sunrise:$id:$epochMsUtc',
+      );
+      ForegroundAlarmOverlay.arm(tzTime, alarmId: id);
+    } catch (e) {
+      if (_isInvalidSoundError(e)) {
+        await SettingsService.setNotificationSound('default');
+        final details = await _buildDetails(forceDefaultSound: true);
+        await notifications.zonedSchedule(
+          id,
+          title ?? '일출 알람',
+          body ?? '좋은 하루 시작해요 ☀️',
+          tzTime,
+          details,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          payload: 'sunrise:$id:${tzTime.toUtc().millisecondsSinceEpoch}',
+        );
+        ForegroundAlarmOverlay.arm(tzTime, alarmId: id);
+      } else {
+        rethrow;
+      }
+    }
 
     final items = await list();
     items.add(
@@ -245,27 +444,37 @@ class AlarmService {
       tzTime = now.add(const Duration(seconds: 2));
     }
 
-    await notifications.zonedSchedule(
-      _id,
-      title ?? '일출 알람',
-      body ?? '좋은 하루 시작해요 ☀️',
-      tzTime,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          'sunrise_channel_v2',
-          'Sunrise',
-          channelDescription: 'Sunrise alarms',
-          priority: Priority.high,
-          importance: Importance.max,
-          fullScreenIntent: true, // 화면을 깨우도록
-          category: AndroidNotificationCategory.alarm,
-          sound: const RawResourceAndroidNotificationSound('alarm'),
-        ),
-        iOS: const DarwinNotificationDetails(),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: 'sunrise',
-    );
+    try {
+      final details = await _buildDetails();
+      final epochMsUtc = tzTime.toUtc().millisecondsSinceEpoch;
+      await notifications.zonedSchedule(
+        _id,
+        title ?? '일출 알람',
+        body ?? '좋은 하루 시작해요 ☀️',
+        tzTime,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: 'sunrise:$_id:$epochMsUtc',
+      );
+      ForegroundAlarmOverlay.arm(tzTime, alarmId: _id);
+    } catch (e) {
+      if (_isInvalidSoundError(e)) {
+        await SettingsService.setNotificationSound('default');
+        final details = await _buildDetails(forceDefaultSound: true);
+        await notifications.zonedSchedule(
+          _id,
+          title ?? '일출 알람',
+          body ?? '좋은 하루 시작해요 ☀️',
+          tzTime,
+          details,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          payload: 'sunrise:$_id:${tzTime.toUtc().millisecondsSinceEpoch}',
+        );
+        ForegroundAlarmOverlay.arm(tzTime, alarmId: _id);
+      } else {
+        rethrow;
+      }
+    }
 
     // Persist/Upsert legacy alarm into list
     final items = await list();
@@ -285,6 +494,7 @@ class AlarmService {
   /// 기존 단일 알람 취소 (레거시)
   static Future<void> cancel() async {
     await notifications.cancel(_id);
+    ForegroundAlarmOverlay.cancel();
     final items = await list();
     items.removeWhere((e) => e.id == _id);
     await _saveList(items);
@@ -293,6 +503,7 @@ class AlarmService {
   /// 특정 ID 알람 취소 및 저장 목록 갱신
   static Future<void> cancelById(int id) async {
     await notifications.cancel(id);
+    ForegroundAlarmOverlay.cancel();
     final items = await list();
     items.removeWhere((e) => e.id == id);
     await _saveList(items);
@@ -301,30 +512,38 @@ class AlarmService {
   /// 모든 알람 취소 및 저장 목록 비우기
   static Future<void> cancelAll() async {
     await notifications.cancelAll();
+    ForegroundAlarmOverlay.cancel();
     await _saveList([]);
   }
 
   /// [진단] 즉시 알림 표시 (채널/권한 문제 점검용)
   static Future<void> debugShowNow({String? title, String? body}) async {
-    await notifications.show(
-      _id,
-      title ?? '테스트 알림',
-      body ?? '채널/권한 동작 확인',
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          'sunrise_channel_v2',
-          'Sunrise',
-          channelDescription: 'Sunrise alarms',
-          priority: Priority.high,
-          importance: Importance.max,
-          fullScreenIntent: true,
-          category: AndroidNotificationCategory.alarm,
-          sound: const RawResourceAndroidNotificationSound('alarm'),
-        ),
-        iOS: const DarwinNotificationDetails(),
-      ),
-      payload: 'debug',
-    );
+    try {
+      final details = await _buildDetails();
+      final nowUtc = DateTime.now().toUtc().millisecondsSinceEpoch;
+      await notifications.show(
+        _id,
+        title ?? '테스트 알림',
+        body ?? '채널/권한 동작 확인',
+        details,
+        payload: 'sunrise:$_id:$nowUtc',
+      );
+    } catch (e) {
+      if (_isInvalidSoundError(e)) {
+        await SettingsService.setNotificationSound('default');
+        final details = await _buildDetails(forceDefaultSound: true);
+        final nowUtc = DateTime.now().toUtc().millisecondsSinceEpoch;
+        await notifications.show(
+          _id,
+          title ?? '테스트 알림',
+          body ?? '채널/권한 동작 확인',
+          details,
+          payload: 'sunrise:$_id:$nowUtc',
+        );
+      } else {
+        rethrow;
+      }
+    }
   }
 
   /// [진단] 예약된 알림 개수 조회

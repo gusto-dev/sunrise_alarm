@@ -12,7 +12,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appTitle => 'Sunrise Alarm';
 
   @override
-  String get nextSunrise => '다음 일출';
+  String get nextSunrise => '일출';
 
   @override
   String get retry => '다시 시도';
@@ -21,7 +21,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get alarmTime => '알람 시각';
 
   @override
-  String get offsetExact => '정각';
+  String get offsetExact => '일출';
 
   @override
   String offsetBeforeMinutes(Object minutes) {
@@ -46,7 +46,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String confirmReserveMsgExact(Object offset) {
-    return '알람을 예약할까요? (일출 $offset)';
+    return '알람을 예약할까요? ($offset)';
   }
 
   @override
@@ -193,13 +193,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsTestAlarm => '알람 테스트';
 
   @override
-  String get settingsTestAlarmDesc => '10초 후 알람이 울립니다.';
+  String get settingsTestAlarmDesc => '테스트 알람이 바로 울립니다.';
 
   @override
   String get settingsRun => '실행';
 
   @override
-  String get testAlarmScheduledToast => '테스트 알람을 예약했어요. (10초 후)';
+  String get testAlarmScheduledToast => '테스트 알람을 예약했어요.';
 
   @override
   String get notifSunriseTitle => '일출 알람';
@@ -212,4 +212,40 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get notifTestBody => '채널/권한 동작 확인';
+
+  @override
+  String get notifChannelName => '일출 알람';
+
+  @override
+  String get notifChannelDesc => '일출 알람 알림';
+
+  @override
+  String get alarmActionStop => '멈춤';
+
+  @override
+  String get settingsNotifSound => '알림 사운드';
+
+  @override
+  String get settingsNotifVibration => '진동 패턴';
+
+  @override
+  String get soundDefault => '기본';
+
+  @override
+  String get soundGoodMorning => '굿모닝';
+
+  @override
+  String get soundWakeUp => '웨이크업';
+
+  @override
+  String get soundMorningTriumph => '모닝 트라이엄프';
+
+  @override
+  String get vibOff => '끄기';
+
+  @override
+  String get vibShort => '짧게';
+
+  @override
+  String get vibLong => '길게';
 }

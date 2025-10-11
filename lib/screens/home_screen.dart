@@ -4,7 +4,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:geocoding/geocoding.dart' as geocoding;
 import '../services/sunrise_service.dart';
-import '../services/alarm_service.dart';
 import '../services/timezone_service.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
@@ -13,6 +12,9 @@ import '../utils/toast.dart' show showTopToast;
 import '../widgets/reserved_alarm_card.dart';
 import '../models/schedule_result.dart';
 import '../services/settings_service.dart';
+import '../services/alarm_service.dart';
+// StopOverlay no longer directly triggered from AppBar
+import '../services/foreground_alarm_overlay.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,11 +35,20 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _error;
   // 사람 친화적 위치 라벨 (예: 서울 강남구)
   String? _placeLabel;
+  // 마지막 위치 저장하여 언어 변경 시 라벨을 재계산
+  Position? _lastPosition;
+  void _onLocaleChanged() {
+    final pos = _lastPosition;
+    if (pos != null) {
+      _updatePlaceLabelFor(pos);
+    }
+  }
+
   // 마지막으로 예약한 알람의 로컬 시각 (표시용)
   DateTime? _lastScheduledAlarmLocal;
   Timer? _ticker;
   // 일출 기준 예약 오프셋 (분). 음수=전, 양수=후
-  int _offsetMinutes = 0; // 기본: 정각
+  int _offsetMinutes = 0; // 기본: 일출 기준(오프셋 0)
 
   bool _isInKorea(double lat, double lon) {
     return lat >= 33.0 && lat <= 39.5 && lon >= 124.5 && lon <= 132.0;
@@ -68,19 +79,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<bool> _ensureLocationReady() async {
+    final l10n = AppLocalizations.of(context);
     // 1) 위치 서비스 켜짐 여부
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
       setState(() {
         _busy = false;
-        _error = AppLocalizations.of(context).locationServiceOffDetail;
+        _error = l10n.locationServiceOffDetail;
       });
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context).locationServiceOffShort),
+          content: Text(l10n.locationServiceOffShort),
           action: SnackBarAction(
-            label: AppLocalizations.of(context).openSettings,
+            label: l10n.openSettings,
             onPressed: () {
               Geolocator.openLocationSettings();
             },
@@ -99,16 +111,14 @@ class _HomeScreenState extends State<HomeScreen> {
         perm == LocationPermission.denied) {
       setState(() {
         _busy = false;
-        _error = AppLocalizations.of(context).locationPermissionRequiredDetail;
+        _error = l10n.locationPermissionRequiredDetail;
       });
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            AppLocalizations.of(context).locationPermissionRequiredShort,
-          ),
+          content: Text(l10n.locationPermissionRequiredShort),
           action: SnackBarAction(
-            label: AppLocalizations.of(context).appSettings,
+            label: l10n.appSettings,
             onPressed: () {
               Geolocator.openAppSettings();
             },
@@ -127,6 +137,8 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _prepare();
     });
+    // 언어 변경 시 현재 위치 라벨을 해당 언어로 재지정
+    appLocale.addListener(_onLocaleChanged);
     // 남은 시간 갱신 타이머 (60초, 배터리 절약)
     _ticker = Timer.periodic(const Duration(seconds: 60), (_) {
       if (!mounted) return;
@@ -136,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _prepare() async {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _busy = true;
       _error = null;
@@ -160,55 +173,16 @@ class _HomeScreenState extends State<HomeScreen> {
         if (last == null) {
           setState(() {
             _busy = false;
-            _error = AppLocalizations.of(context).couldNotGetLocation;
+            _error = l10n.couldNotGetLocation;
           });
           return;
         }
         pos = last;
       }
 
-      // 사용자 친화적 위치 라벨 역지오코딩 (도시급까지만 표기)
-      String? place;
-      try {
-        final placemarks = await geocoding.placemarkFromCoordinates(
-          pos.latitude,
-          pos.longitude,
-        );
-        if (placemarks.isNotEmpty) {
-          final p = placemarks.first;
-          String? city;
-          final sa = (p.subAdministrativeArea ?? '').trim(); // 시/군 (도 산하)
-          final loc = (p.locality ?? '').trim(); // 일부 기기에서 시/군이 locality로 옴
-          final admin = (p.administrativeArea ?? '')
-              .trim(); // 서울특별시/부산광역시/경기도 등
-
-          if (sa.isNotEmpty && (sa.endsWith('시') || sa.endsWith('군'))) {
-            city = sa;
-          } else if (loc.isNotEmpty &&
-              (loc.endsWith('시') || loc.endsWith('군'))) {
-            city = loc;
-          } else if (admin.isNotEmpty &&
-              (admin.endsWith('특별시') ||
-                  admin.endsWith('광역시') ||
-                  admin.endsWith('자치시') ||
-                  admin.endsWith('시'))) {
-            city = admin;
-          } else if (admin.isNotEmpty) {
-            city = admin; // 시 식별 실패 시 광역(도) 표시
-          }
-
-          place = city;
-          // 위치 기반 로케일 설정 (KR이면 한국어, 그 외 영어)
-          final code = (p.isoCountryCode ?? '').toUpperCase();
-          if (code == 'KR') {
-            appLocale.value = const Locale('ko');
-          } else {
-            appLocale.value = const Locale('en');
-          }
-        }
-      } catch (_) {
-        // 역지오코딩 실패는 무시 (라벨만 비워둠)
-      }
+      _lastPosition = pos;
+      // 현재 앱 로케일 기준으로 위치 라벨 계산
+      final place = await _computePlaceLabel(pos, appLocale.value);
 
       // 위치 기준 타임존 조회 (실패 시 null)
       final tzId = await TimeZoneService.fetchTimeZoneId(
@@ -245,18 +219,65 @@ class _HomeScreenState extends State<HomeScreen> {
         appThemeMode.value = isDay ? ThemeMode.light : ThemeMode.dark;
       }
     } on TimeoutException catch (_) {
-      setState(
-        () => _error = AppLocalizations.of(context).networkSlowSunriseFail,
-      );
+      setState(() => _error = l10n.networkSlowSunriseFail);
     } catch (e) {
-      setState(
-        () => _error = AppLocalizations.of(
-          context,
-        ).errorWithMessage(e.toString()),
-      );
+      setState(() => _error = l10n.errorWithMessage(e.toString()));
     } finally {
       setState(() => _busy = false);
     }
+  }
+
+  // 주어진 위치와 앱 로케일로 사용자 친화적 라벨을 계산
+  Future<String?> _computePlaceLabel(Position pos, Locale? locale) async {
+    try {
+      final placemarks = await geocoding.placemarkFromCoordinates(
+        pos.latitude,
+        pos.longitude,
+      );
+      if (placemarks.isEmpty) return null;
+      final p = placemarks.first;
+      final lang = (locale?.languageCode ?? '').toLowerCase();
+      if (lang == 'ko') {
+        // 한국어: 시/군 위주로 간단히 표기
+        String? city;
+        final sa = (p.subAdministrativeArea ?? '').trim();
+        final loc = (p.locality ?? '').trim();
+        final admin = (p.administrativeArea ?? '').trim();
+        if (sa.isNotEmpty && (sa.endsWith('시') || sa.endsWith('군'))) {
+          city = sa;
+        } else if (loc.isNotEmpty && (loc.endsWith('시') || loc.endsWith('군'))) {
+          city = loc;
+        } else if (admin.isNotEmpty) {
+          city = admin;
+        }
+        return city?.isNotEmpty == true ? city : null;
+      } else {
+        // 영어: locality > subAdministrativeArea > administrativeArea
+        final parts = <String>[
+          if ((p.locality ?? '').trim().isNotEmpty) (p.locality ?? '').trim(),
+          if ((p.subAdministrativeArea ?? '').trim().isNotEmpty)
+            (p.subAdministrativeArea ?? '').trim(),
+          if ((p.administrativeArea ?? '').trim().isNotEmpty)
+            (p.administrativeArea ?? '').trim(),
+        ];
+        if (parts.isEmpty) return null;
+        return parts.first;
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Note: Without localeIdentifier support in the current geocoding package
+  // version, we reformat the label based on app language using available
+  // placemark fields. Underlying language may come from the OS locale.
+
+  Future<void> _updatePlaceLabelFor(Position pos) async {
+    final label = await _computePlaceLabel(pos, appLocale.value);
+    if (!mounted) return;
+    setState(() {
+      _placeLabel = label;
+    });
   }
 
   // 수동 좌표 입력 기능 제거됨
@@ -293,30 +314,31 @@ class _HomeScreenState extends State<HomeScreen> {
   // 통합 버튼으로 기능 대체되어 기존 재예약 메서드는 제거되었습니다.
 
   Future<void> _addNewAlarmFromCurrent() async {
+    final l10n = AppLocalizations.of(context);
     if (nextSunriseLocal == null || _targetLoc == null) {
       await _prepare();
       if (nextSunriseLocal == null || _targetLoc == null) return;
     }
-    // 일출 시각(정각) 기준으로 다음 알람 예약 (기존 알람은 대체)
+    // 일출 시각 기준으로 다음 알람 예약 (기존 알람은 대체)
     final res = _computeScheduleNormalized(
       nextSunriseLocal!,
       _targetLoc!,
       _offsetMinutes,
     );
     await AlarmService.cancel();
-    final l10n = AppLocalizations.of(context);
     await AlarmService.scheduleAtZoned(
       res.scheduled,
       _targetLoc!,
       title: l10n.notifSunriseTitle,
       body: l10n.notifSunriseBody,
     );
+    // Arm foreground overlay timer so if app stays open, the modal pops at ring time
+    ForegroundAlarmOverlay.arm(res.scheduled, alarmId: 2025);
     setState(() {
       _lastScheduledAlarmLocal = res.scheduled;
     });
     if (!mounted) return;
-    if (!mounted) return;
-    showTopToast(context, AppLocalizations.of(context).alarmReservedToast);
+    showTopToast(context, l10n.alarmReservedToast);
   }
 
   Future<bool> _confirm({
@@ -371,6 +393,7 @@ class _HomeScreenState extends State<HomeScreen> {
               );
               if (!ok) return;
               await AlarmService.cancel();
+              ForegroundAlarmOverlay.cancel();
               if (!mounted) return;
               setState(() {
                 _lastScheduledAlarmLocal = null;
@@ -559,7 +582,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         Text(
-                          '${AppLocalizations.of(context).nextSunrise.split(' ').first} ${_offsetLabel(AppLocalizations.of(context))}',
+                          _offsetMinutes == 0
+                              ? AppLocalizations.of(context).nextSunrise
+                              : '${AppLocalizations.of(context).nextSunrise} ${_offsetLabel(AppLocalizations.of(context))}',
                           style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(
                                 color: Theme.of(
@@ -637,6 +662,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     : () async {
                         // Confirm before scheduling
                         final l10n = AppLocalizations.of(context);
+                        final locale = Localizations.localeOf(context);
                         final off = _offsetLabel(l10n);
                         tz.TZDateTime? preview;
                         if (nextSunriseLocal != null && _targetLoc != null) {
@@ -654,14 +680,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   off,
                                   (appTime24h.value
                                       ? fmt.fmtHM(preview)
-                                      : fmt.fmtJmIntl(
-                                          preview,
-                                          Localizations.localeOf(context),
-                                        )),
+                                      : fmt.fmtJmIntl(preview, locale)),
                                 ),
                           confirmText: l10n.reserve,
                           cancelText: l10n.cancel,
                         );
+                        if (!mounted) return;
                         if (ok) {
                           await _addNewAlarmFromCurrent();
                         }
@@ -687,8 +711,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Stop dialog replaced by overlay for zero-gap audio
+
   @override
   void dispose() {
+    appLocale.removeListener(_onLocaleChanged);
     _ticker?.cancel();
     super.dispose();
   }

@@ -45,6 +45,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  vibration: ^3.1.4
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
@@ -68,7 +70,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/sounds/alarm.mp3
+    # Bundle all alarm sound assets for in-app playback
+    - assets/sounds/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

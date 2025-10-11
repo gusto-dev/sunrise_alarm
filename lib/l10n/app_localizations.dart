@@ -107,7 +107,7 @@ abstract class AppLocalizations {
   /// No description provided for @nextSunrise.
   ///
   /// In ko, this message translates to:
-  /// **'다음 일출'**
+  /// **'일출'**
   String get nextSunrise;
 
   /// No description provided for @retry.
@@ -125,7 +125,7 @@ abstract class AppLocalizations {
   /// No description provided for @offsetExact.
   ///
   /// In ko, this message translates to:
-  /// **'정각'**
+  /// **'일출'**
   String get offsetExact;
 
   /// No description provided for @offsetBeforeMinutes.
@@ -161,7 +161,7 @@ abstract class AppLocalizations {
   /// No description provided for @confirmReserveMsgExact.
   ///
   /// In ko, this message translates to:
-  /// **'알람을 예약할까요? (일출 {offset})'**
+  /// **'알람을 예약할까요? ({offset})'**
   String confirmReserveMsgExact(Object offset);
 
   /// No description provided for @confirmReserveMsg.
@@ -425,7 +425,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsTestAlarmDesc.
   ///
   /// In ko, this message translates to:
-  /// **'10초 후 알람이 울립니다.'**
+  /// **'테스트 알람이 바로 울립니다.'**
   String get settingsTestAlarmDesc;
 
   /// No description provided for @settingsRun.
@@ -437,7 +437,7 @@ abstract class AppLocalizations {
   /// No description provided for @testAlarmScheduledToast.
   ///
   /// In ko, this message translates to:
-  /// **'테스트 알람을 예약했어요. (10초 후)'**
+  /// **'테스트 알람을 예약했어요.'**
   String get testAlarmScheduledToast;
 
   /// No description provided for @notifSunriseTitle.
@@ -463,6 +463,78 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'채널/권한 동작 확인'**
   String get notifTestBody;
+
+  /// No description provided for @notifChannelName.
+  ///
+  /// In ko, this message translates to:
+  /// **'일출 알람'**
+  String get notifChannelName;
+
+  /// No description provided for @notifChannelDesc.
+  ///
+  /// In ko, this message translates to:
+  /// **'일출 알람 알림'**
+  String get notifChannelDesc;
+
+  /// No description provided for @alarmActionStop.
+  ///
+  /// In ko, this message translates to:
+  /// **'멈춤'**
+  String get alarmActionStop;
+
+  /// No description provided for @settingsNotifSound.
+  ///
+  /// In ko, this message translates to:
+  /// **'알림 사운드'**
+  String get settingsNotifSound;
+
+  /// No description provided for @settingsNotifVibration.
+  ///
+  /// In ko, this message translates to:
+  /// **'진동 패턴'**
+  String get settingsNotifVibration;
+
+  /// No description provided for @soundDefault.
+  ///
+  /// In ko, this message translates to:
+  /// **'기본'**
+  String get soundDefault;
+
+  /// No description provided for @soundGoodMorning.
+  ///
+  /// In ko, this message translates to:
+  /// **'굿모닝'**
+  String get soundGoodMorning;
+
+  /// No description provided for @soundWakeUp.
+  ///
+  /// In ko, this message translates to:
+  /// **'웨이크업'**
+  String get soundWakeUp;
+
+  /// No description provided for @soundMorningTriumph.
+  ///
+  /// In ko, this message translates to:
+  /// **'모닝 트라이엄프'**
+  String get soundMorningTriumph;
+
+  /// No description provided for @vibOff.
+  ///
+  /// In ko, this message translates to:
+  /// **'끄기'**
+  String get vibOff;
+
+  /// No description provided for @vibShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'짧게'**
+  String get vibShort;
+
+  /// No description provided for @vibLong.
+  ///
+  /// In ko, this message translates to:
+  /// **'길게'**
+  String get vibLong;
 }
 
 class _AppLocalizationsDelegate

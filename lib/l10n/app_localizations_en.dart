@@ -12,7 +12,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'Sunrise Alarm';
 
   @override
-  String get nextSunrise => 'Next Sunrise';
+  String get nextSunrise => 'Sunrise';
 
   @override
   String get retry => 'Retry';
@@ -21,7 +21,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get alarmTime => 'Alarm Time';
 
   @override
-  String get offsetExact => 'on time';
+  String get offsetExact => 'sunrise';
 
   @override
   String offsetBeforeMinutes(Object minutes) {
@@ -46,7 +46,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String confirmReserveMsgExact(Object offset) {
-    return 'Reserve the alarm? (Sunrise $offset)';
+    return 'Reserve the alarm? ($offset)';
   }
 
   @override
@@ -197,13 +197,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTestAlarm => 'Test alarm';
 
   @override
-  String get settingsTestAlarmDesc => 'An alarm will ring in 10 seconds.';
+  String get settingsTestAlarmDesc => 'Test alarm will ring immediately.';
 
   @override
   String get settingsRun => 'Run';
 
   @override
-  String get testAlarmScheduledToast => 'Test alarm scheduled (in 10s).';
+  String get testAlarmScheduledToast => 'Test alarm scheduled.';
 
   @override
   String get notifSunriseTitle => 'Sunrise Alarm';
@@ -216,4 +216,40 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get notifTestBody => 'Check channel/permission behavior';
+
+  @override
+  String get notifChannelName => 'Sunrise Alarm';
+
+  @override
+  String get notifChannelDesc => 'Sunrise alarm notifications';
+
+  @override
+  String get alarmActionStop => 'Stop';
+
+  @override
+  String get settingsNotifSound => 'Notification sound';
+
+  @override
+  String get settingsNotifVibration => 'Vibration pattern';
+
+  @override
+  String get soundDefault => 'Default';
+
+  @override
+  String get soundGoodMorning => 'Good Morning';
+
+  @override
+  String get soundWakeUp => 'Wake Up';
+
+  @override
+  String get soundMorningTriumph => 'Morning Triumph';
+
+  @override
+  String get vibOff => 'Off';
+
+  @override
+  String get vibShort => 'Short';
+
+  @override
+  String get vibLong => 'Long';
 }

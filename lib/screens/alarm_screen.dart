@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
 import '../services/quote_service.dart';
+import '../services/ringtone_service.dart';
 import '../l10n/app_localizations.dart';
 
 class AlarmScreen extends StatefulWidget {
-  const AlarmScreen({super.key});
+  final int? scheduledEpochMsUtc; // 알림이 울리기 시작한 시각(UTC epoch ms)
+  const AlarmScreen({super.key, this.scheduledEpochMsUtc});
 
   @override
   State<AlarmScreen> createState() => _AlarmScreenState();
@@ -13,7 +14,6 @@ class AlarmScreen extends StatefulWidget {
 class _AlarmScreenState extends State<AlarmScreen> {
   late final String quote;
   final ctrl = TextEditingController();
-  final player = AudioPlayer()..setReleaseMode(ReleaseMode.loop);
   double tolerance = 0.4; // 오타 허용 정도 (0=엄격,1=관대)
   bool _ringing = true; // 멈출 때까지 계속 울림
 
@@ -21,20 +21,22 @@ class _AlarmScreenState extends State<AlarmScreen> {
   void initState() {
     super.initState();
     quote = QuoteService.pick();
-    player.play(AssetSource('sounds/alarm.mp3')); // Flutter assets에서 재생
+    // 알림을 탭하는 순간 백그라운드에서 이미 재생을 시작해두고, 여기서는 보장만
+    RingtoneService.ensureStarted(
+      scheduledEpochMsUtc: widget.scheduledEpochMsUtc,
+    );
   }
 
   @override
   void dispose() {
-    player.stop();
-    player.dispose();
+    RingtoneService.stop();
     ctrl.dispose();
     super.dispose();
   }
 
   Future<void> _tryStop() async {
     if (QuoteService.pass(ctrl.text, quote, tolerance)) {
-      await player.stop();
+      await RingtoneService.stop();
       _ringing = false;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -49,7 +51,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
   }
 
   Future<void> _forceStop() async {
-    await player.stop();
+    await RingtoneService.stop();
     _ringing = false;
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -83,7 +85,9 @@ class _AlarmScreenState extends State<AlarmScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  quote,
+                  (quote.isEmpty)
+                      ? AppLocalizations.of(context).notifSunriseBody
+                      : quote,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../main.dart';
 import '../services/settings_service.dart';
 import '../l10n/app_localizations.dart';
-import '../services/alarm_service.dart';
-import '../utils/toast.dart' show showTopToast;
+// Removed scheduling in test; no direct alarm_service or toast needed
+import '../services/ringtone_service.dart';
+import '../widgets/stop_overlay.dart';
+import '../services/vibration_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,6 +18,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _language = 'system'; // 'system'|'ko'|'en'
   bool _time24h = true;
   String _theme = 'auto'; // 'auto'|'light'|'dark'
+  String _notifSound =
+      'default'; // 'default'|'good_morning'|'wake_up'|'morning_triumph'
+  String _notifVibration = 'short'; // 'off'|'short'|'long'|'pattern'
 
   @override
   void initState() {
@@ -27,11 +32,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final lang = await SettingsService.getLanguageOverride();
     final t24 = await SettingsService.getTimeFormat24h();
     final theme = await SettingsService.getThemeModePref();
+    final sound = await SettingsService.getNotificationSound();
+    final vib = await SettingsService.getVibrationPattern();
     if (!mounted) return;
     setState(() {
       _language = lang;
       _time24h = t24;
       _theme = theme;
+      _notifSound = sound; // already normalized by SettingsService
+      _notifVibration = vib;
     });
   }
 
@@ -66,6 +75,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         appThemeMode.value = ThemeMode.system;
         break;
     }
+  }
+
+  Future<void> _applyNotifSound(String v) async {
+    setState(() => _notifSound = v);
+    await SettingsService.setNotificationSound(v);
+    // Play a short preview of the selected sound without affecting alarms
+    try {
+      await RingtoneService.previewKey(v);
+    } catch (_) {}
+  }
+
+  Future<void> _applyNotifVibration(String v) async {
+    setState(() => _notifVibration = v);
+    await SettingsService.setVibrationPattern(v);
+    try {
+      await VibrationService.preview(v);
+    } catch (_) {}
   }
 
   @override
@@ -127,6 +153,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          ListTile(
+            title: Text(l10n.settingsNotifSound),
+            trailing: DropdownButton<String>(
+              value: _notifSound,
+              onChanged: (v) => v == null ? null : _applyNotifSound(v),
+              items: [
+                DropdownMenuItem(
+                  value: 'default',
+                  child: Text(l10n.soundDefault),
+                ),
+                DropdownMenuItem(
+                  value: 'good_morning',
+                  child: Text(l10n.soundGoodMorning),
+                ),
+                DropdownMenuItem(
+                  value: 'wake_up',
+                  child: Text(l10n.soundWakeUp),
+                ),
+                DropdownMenuItem(
+                  value: 'morning_triumph',
+                  child: Text(l10n.soundMorningTriumph),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            title: Text(l10n.settingsNotifVibration),
+            trailing: DropdownButton<String>(
+              value: _notifVibration,
+              onChanged: (v) => v == null ? null : _applyNotifVibration(v),
+              items: [
+                DropdownMenuItem(value: 'off', child: Text(l10n.vibOff)),
+                DropdownMenuItem(value: 'short', child: Text(l10n.vibShort)),
+                DropdownMenuItem(value: 'long', child: Text(l10n.vibLong)),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -143,14 +206,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(l10n.settingsTestAlarmDesc),
             trailing: FilledButton(
               onPressed: () async {
-                final when = DateTime.now().add(const Duration(seconds: 10));
-                await AlarmService.scheduleNew(
-                  when,
-                  title: l10n.notifTestTitle,
-                  body: l10n.notifTestBody,
+                // Immediately ring in-app without showing a test notification
+                final whenUtc = DateTime.now().toUtc().millisecondsSinceEpoch;
+                await RingtoneService.ensureStarted(
+                  scheduledEpochMsUtc: whenUtc,
                 );
-                if (!mounted) return;
-                showTopToast(context, l10n.testAlarmScheduledToast);
+                // Show stop overlay but do not cancel any scheduled alarms when stopping
+                StopOverlay.show(cancelScheduled: false);
               },
               child: Text(l10n.settingsRun),
             ),

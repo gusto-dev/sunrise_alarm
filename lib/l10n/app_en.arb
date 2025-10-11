@@ -1,16 +1,16 @@
 {
   "@@locale": "en",
   "appTitle": "Sunrise Alarm",
-  "nextSunrise": "Next Sunrise",
+  "nextSunrise": "Sunrise",
   "retry": "Retry",
   "alarmTime": "Alarm Time",
-  "offsetExact": "on time",
+  "offsetExact": "sunrise",
   "offsetBeforeMinutes": "{minutes} min before",
   "offsetAfterMinutes": "{minutes} min after",
   "previewRing": "Rings at {time}",
   "reserveAlarm": "Reserve Alarm",
   "confirmReserveTitle": "Reserve Alarm",
-  "confirmReserveMsgExact": "Reserve the alarm? (Sunrise {offset})",
+  "confirmReserveMsgExact": "Reserve the alarm? ({offset})",
   "confirmReserveMsg": "Reserve the alarm? (Sunrise {offset}, Rings at {time})",
   "reserve": "Reserve",
   "cancel": "Cancel",
@@ -56,12 +56,25 @@
   "settingsTooltip": "Settings"
   ,
   "settingsTestAlarm": "Test alarm",
-  "settingsTestAlarmDesc": "An alarm will ring in 10 seconds.",
+  "settingsTestAlarmDesc": "Test alarm will ring immediately.",
   "settingsRun": "Run",
-  "testAlarmScheduledToast": "Test alarm scheduled (in 10s)."
+  "testAlarmScheduledToast": "Test alarm scheduled."
   ,
   "notifSunriseTitle": "Sunrise Alarm",
   "notifSunriseBody": "Start a great day ☀️",
   "notifTestTitle": "Test Notification",
   "notifTestBody": "Check channel/permission behavior"
+  ,
+  "notifChannelName": "Sunrise Alarm",
+  "notifChannelDesc": "Sunrise alarm notifications",
+  "alarmActionStop": "Stop",
+  "settingsNotifSound": "Notification sound",
+  "settingsNotifVibration": "Vibration pattern",
+  "soundDefault": "Default",
+  "soundGoodMorning": "Good Morning",
+  "soundWakeUp": "Wake Up",
+  "soundMorningTriumph": "Morning Triumph",
+  "vibOff": "Off",
+  "vibShort": "Short",
+  "vibLong": "Long"
 }

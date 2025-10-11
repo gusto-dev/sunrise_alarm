@@ -5,11 +5,16 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
 import 'screens/home_screen.dart';
-import 'screens/alarm_screen.dart';
+// Removed AlarmScreen; we now use a simple stop dialog on HomeScreen
 import 'screens/settings_screen.dart';
 import 'services/settings_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
+import 'services/ringtone_service.dart';
+import 'services/alarm_service.dart';
+import 'widgets/stop_overlay.dart';
+// Show our in-app modal overlay on alarm interactions (no system alert)
+import 'package:google_fonts/google_fonts.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 final notifications = FlutterLocalNotificationsPlugin();
@@ -26,26 +31,88 @@ Future<void> initTimeZone() async {
   if (override != null && override.isNotEmpty) {
     tz.setLocalLocation(tz.getLocation(override));
   } else {
-    final tzInfo = await FlutterTimezone.getLocalTimezone();
-    // tzInfo.identifier 예: 'Asia/Seoul'
-    tz.setLocalLocation(tz.getLocation(tzInfo.identifier));
+    try {
+      final tzResult = await FlutterTimezone.getLocalTimezone();
+      String? tzName;
+      // Some versions return a String, others may return objects.
+      // Try String first, then dynamic.identifier if available.
+      if (tzResult is String) {
+        tzName = tzResult as String;
+      } else {
+        try {
+          final dyn = tzResult as dynamic;
+          final id = dyn.identifier;
+          if (id is String) tzName = id;
+        } catch (_) {}
+      }
+      if (tzName != null && tzName.isNotEmpty) {
+        tz.setLocalLocation(tz.getLocation(tzName));
+      }
+    } catch (_) {
+      // Fallback: keep default tz.local as packaged by tzdata
+    }
   }
 }
 
 Future<void> _initNotifications() async {
+  final l10nCtx = navigatorKey.currentContext;
+  // Fallbacks if context is not yet available
+  final channelName = l10nCtx != null
+      ? AppLocalizations.of(l10nCtx).notifChannelName
+      : 'Sunrise Alarm';
+  final channelDesc = l10nCtx != null
+      ? AppLocalizations.of(l10nCtx).notifChannelDesc
+      : 'Sunrise alarm notifications';
+
+  final lang = l10nCtx != null
+      ? Localizations.localeOf(l10nCtx).languageCode
+      : 'en';
+  final channelId = 'sunrise_channel_$lang';
+
   const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const iosInit = DarwinInitializationSettings();
-  const initSettings = InitializationSettings(
+  final iosInit = DarwinInitializationSettings(
+    notificationCategories: [
+      DarwinNotificationCategory(
+        'SUNRISE_ALARM',
+        actions: [
+          DarwinNotificationAction.plain(
+            'STOP',
+            l10nCtx != null
+                ? AppLocalizations.of(l10nCtx).alarmActionStop
+                : 'Stop',
+            options: {DarwinNotificationActionOption.foreground},
+          ),
+        ],
+      ),
+    ],
+  );
+  final initSettings = InitializationSettings(
     android: androidInit,
     iOS: iosInit,
   );
 
   await notifications.initialize(
     initSettings,
-    onDidReceiveNotificationResponse: (resp) {
-      navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => const AlarmScreen()),
-      );
+    onDidReceiveNotificationResponse: (resp) async {
+      final (id, whenUtc) = _parseIdAndMs(resp.payload);
+      // Handle explicit Stop action (iOS). Android uses in-app stop.
+      if ((resp.actionId ?? '').toUpperCase() == 'STOP') {
+        await RingtoneService.stop();
+        if (id != null) {
+          try {
+            await AlarmService.cancelById(id);
+          } catch (_) {}
+        }
+        // Ensure any visible overlay is dismissed after stopping
+        if (StopOverlay.isShowing) {
+          StopOverlay.hide();
+        }
+        return;
+      }
+      // Default tap: just ensure playback continues; no popup UI
+      RingtoneService.ensureStarted(scheduledEpochMsUtc: whenUtc);
+      // Show our modal stop overlay (does not interrupt audio)
+      StopOverlay.show(alarmId: id);
     },
   );
 
@@ -56,6 +123,16 @@ Future<void> _initNotifications() async {
       >();
   await androidImpl?.requestNotificationsPermission();
   await androidImpl?.requestExactAlarmsPermission();
+
+  // Create localized channel per locale (Android)
+  await androidImpl?.createNotificationChannel(
+    AndroidNotificationChannel(
+      channelId,
+      channelName,
+      description: channelDesc,
+      importance: Importance.max,
+    ),
+  );
 
   // iOS notifications permission
   final iosImpl = notifications
@@ -69,6 +146,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initTimeZone();
   await _initNotifications();
+  // 미리 사운드 소스를 준비해, 알림 탭 시 시작 지연/끊김 최소화
+  await RingtoneService.ensurePrepared();
 
   // Load saved user preferences before building UI
   final langPref = await SettingsService.getLanguageOverride();
@@ -96,13 +175,11 @@ Future<void> main() async {
   // 프레임이 그려진 직후 내비게이션 수행 (navigatorKey 사용 가능 상태)
   if (launchDetails?.didNotificationLaunchApp == true) {
     final payload = launchDetails!.notificationResponse?.payload;
-    if (payload == 'sunrise' || payload == 'debug') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(builder: (_) => const AlarmScreen()),
-        );
-      });
-    }
+    final (id, whenUtc) = _parseIdAndMs(payload);
+    // 앱이 알림으로 시작될 때도 즉시 재생 시작 후 다이얼로그 표시
+    RingtoneService.ensureStarted(scheduledEpochMsUtc: whenUtc);
+    // Show modal stop overlay on launch via notification
+    StopOverlay.show(alarmId: id);
   }
 }
 
@@ -150,6 +227,18 @@ class MyApp extends StatelessWidget {
               foregroundColor: lightScheme.primary,
             ),
           ),
+          appBarTheme: AppBarTheme(
+            titleTextStyle: GoogleFonts.notoSansKr(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: lightScheme.onSurface,
+              letterSpacing: 0.4,
+            ),
+            toolbarTextStyle: GoogleFonts.notoSansKr(
+              fontSize: 14,
+              color: lightScheme.onSurface,
+            ),
+          ),
         );
     final dark = ThemeData.from(colorScheme: darkScheme, useMaterial3: true)
         .copyWith(
@@ -163,6 +252,18 @@ class MyApp extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: darkScheme.secondary, width: 1.5),
               foregroundColor: darkScheme.secondary,
+            ),
+          ),
+          appBarTheme: AppBarTheme(
+            titleTextStyle: GoogleFonts.notoSansKr(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: darkScheme.onSurface,
+              letterSpacing: 0.4,
+            ),
+            toolbarTextStyle: GoogleFonts.notoSansKr(
+              fontSize: 14,
+              color: darkScheme.onSurface,
             ),
           ),
         );
@@ -189,7 +290,6 @@ class MyApp extends StatelessWidget {
               supportedLocales: const [Locale('ko'), Locale('en')],
               routes: {
                 '/': (_) => const HomeScreen(),
-                '/alarm': (_) => const AlarmScreen(),
                 '/settings': (_) => const SettingsScreen(),
               },
             );
@@ -199,3 +299,15 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+/// payload 형식: 'sunrise:[id]:[epochMsUtc]'를 파싱해 (id, ms) 튜플 반환
+(int?, int?) _parseIdAndMs(String? payload) {
+  if (payload == null || !payload.startsWith('sunrise:')) return (null, null);
+  final parts = payload.split(':');
+  if (parts.length < 3) return (null, null);
+  final id = int.tryParse(parts[1]);
+  final ms = int.tryParse(parts[2]);
+  return (id, ms);
+}
+
+// Overlay version handles stop popup; no modal route push required.
