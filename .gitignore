@@ -43,3 +43,27 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# --- Sensitive/secret files (API keys, signing, env) ---
+# Android signing keys and properties
+android/key.properties
+!android/key.properties.example
+**/*.jks
+**/*.keystore
+
+# Android local SDK path file
+**/local.properties
+
+# Firebase / Google services configs (keep out of VCS)
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# Env files (for dotenv or similar)
+.env
+.env.*
+
+# Common Dart secrets files (if you create them)
+lib/**/secrets.dart
+lib/**/secrets_*.dart
+lib/**/api_keys.dart
+lib/**/api_keys_*.dart

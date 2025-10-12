@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart' show PlatformException;
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -23,7 +25,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 위치 기준 다음 일출 시각 (로컬/위치 타임존)
   DateTime? nextSunriseLocal;
   // UTC 기준 다음 일출 시각(진단)
@@ -133,9 +135,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 첫 프레임 이후 비동기 준비 시작 (빌드 블로킹 최소화)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _prepare();
+      // 저장소에 있는 예약 내역을 불러와 UI에 반영 (앱 재시작 후에도 표시 유지)
+      await _loadReservedFromStorage();
     });
     // 언어 변경 시 현재 위치 라벨을 해당 언어로 재지정
     appLocale.addListener(_onLocaleChanged);
@@ -145,6 +150,59 @@ class _HomeScreenState extends State<HomeScreen> {
       // 남은 시간 텍스트만 갱신되도록 setState 호출
       setState(() {});
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state == AppLifecycleState.resumed) {
+      // 앱 복귀 시 저장소에서 예약 정보 동기화
+      await _loadReservedFromStorage();
+    }
+    super.didChangeAppLifecycleState(state);
+  }
+
+  // 저장된 예약(레거시 단일 ID 우선)을 읽어와 로컬 시간으로 표시
+  Future<void> _loadReservedFromStorage() async {
+    try {
+      final items = await AlarmService.list();
+      if (items.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _lastScheduledAlarmLocal = null;
+        });
+        return;
+      }
+      // 우선순위: 레거시 단일 ID(2025), 없으면 가장 가까운 미래 예약
+      final legacy = items.where((e) => e.id == 2025).toList();
+      final nowUtc = DateTime.now().toUtc();
+      final candidates = legacy.isNotEmpty ? legacy : items;
+      // 가장 가까운 미래 시각 선택
+      candidates.sort((a, b) => a.scheduled.compareTo(b.scheduled));
+      ScheduledAlarm? pick;
+      for (final it in candidates) {
+        if (it.scheduled.isAfter(nowUtc)) {
+          pick = it;
+          break;
+        }
+      }
+      pick ??= candidates.last; // 모두 과거라면 가장 늦은 것
+
+      // 저장된 tzName을 사용해 로컬 표시 시간 계산
+      tz.Location loc;
+      try {
+        loc = tz.getLocation(pick.tzName);
+      } catch (_) {
+        loc = _targetLoc ?? tz.local;
+      }
+      final local = tz.TZDateTime.from(pick.scheduled, loc);
+      if (!mounted) return;
+      setState(() {
+        _lastScheduledAlarmLocal = local;
+        _targetLoc = _targetLoc ?? loc;
+      });
+    } catch (_) {
+      // 저장소 파싱 실패 등은 무시하고 표시만 비움
+    }
   }
 
   Future<void> _prepare() async {
@@ -315,6 +373,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _addNewAlarmFromCurrent() async {
     final l10n = AppLocalizations.of(context);
+    // Capture locale upfront to avoid using BuildContext across async gaps
+    final localeAtStart = Localizations.localeOf(context);
+    final isKoStart = localeAtStart.languageCode == 'ko';
+    // Web은 flutter_local_notifications의 예약이 지원되지 않음
+    if (kIsWeb) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      final msg = isKo
+          ? '웹에서는 알람 예약이 지원되지 않아요. 안드로이드 기기에서 테스트해 주세요.'
+          : 'Alarm scheduling is not supported on web. Please test on an Android device.';
+      if (!mounted) return;
+      showTopToast(context, msg);
+      return;
+    }
     if (nextSunriseLocal == null || _targetLoc == null) {
       await _prepare();
       if (nextSunriseLocal == null || _targetLoc == null) return;
@@ -325,20 +396,40 @@ class _HomeScreenState extends State<HomeScreen> {
       _targetLoc!,
       _offsetMinutes,
     );
-    await AlarmService.cancel();
-    await AlarmService.scheduleAtZoned(
-      res.scheduled,
-      _targetLoc!,
-      title: l10n.notifSunriseTitle,
-      body: l10n.notifSunriseBody,
-    );
-    // Arm foreground overlay timer so if app stays open, the modal pops at ring time
-    ForegroundAlarmOverlay.arm(res.scheduled, alarmId: 2025);
-    setState(() {
-      _lastScheduledAlarmLocal = res.scheduled;
-    });
-    if (!mounted) return;
-    showTopToast(context, l10n.alarmReservedToast);
+    try {
+      await AlarmService.cancel();
+      await AlarmService.scheduleAtZoned(
+        res.scheduled,
+        _targetLoc!,
+        title: l10n.notifSunriseTitle,
+        body: l10n.notifSunriseBody,
+      );
+      // Arm foreground overlay timer so if app stays open, the modal pops at ring time
+      ForegroundAlarmOverlay.arm(res.scheduled, alarmId: 2025);
+      if (!mounted) return;
+      setState(() {
+        _lastScheduledAlarmLocal = res.scheduled;
+      });
+      showTopToast(context, l10n.alarmReservedToast);
+      // 진단용: 예약된 알림 개수 출력
+      try {
+        final cnt = await AlarmService.pendingCount();
+        // ignore: avoid_print
+        debugPrint('[Alarm] Pending notification requests: $cnt');
+      } catch (_) {}
+    } on PlatformException catch (_) {
+      // Android 14+에서 정확 알람 권한 미허용 등으로 실패할 수 있음
+      final msg = isKoStart
+          ? '정확한 알람 권한이 없어 예약에 실패했어요. 설정 > 알람 및 리마인더(또는 정확한 알람)에서 허용해 주세요.'
+          : 'Failed to schedule. Please enable the exact alarm permission in system settings.';
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   Future<bool> _confirm({
@@ -715,6 +806,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     appLocale.removeListener(_onLocaleChanged);
     _ticker?.cancel();
     super.dispose();
