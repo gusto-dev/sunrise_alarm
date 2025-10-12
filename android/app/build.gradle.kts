@@ -1,3 +1,5 @@
+import java.io.FileInputStream
+import java.util.Properties
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -21,6 +23,14 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    // Load release keystore properties if present (for signed release builds)
+    val keystoreProperties = Properties()
+    val keystorePropertiesFile = rootProject.file("key.properties")
+    val hasKeystore = keystorePropertiesFile.exists()
+    if (hasKeystore) {
+        keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.heeapp.sunrise_alarm"
@@ -32,11 +42,28 @@ android {
         versionName = flutter.versionName
     }
 
+    if (hasKeystore) {
+        signingConfigs {
+            create("release") {
+                val storeFilePath = keystoreProperties["storeFile"] as String?
+                if (storeFilePath != null) {
+                    storeFile = file(storeFilePath)
+                }
+                storePassword = keystoreProperties["storePassword"] as String?
+                keyAlias = keystoreProperties["keyAlias"] as String?
+                keyPassword = keystoreProperties["keyPassword"] as String?
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Use release signing if key.properties is present; otherwise use debug for local runs
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 }

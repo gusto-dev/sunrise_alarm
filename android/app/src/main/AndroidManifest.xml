@@ -16,11 +16,12 @@
     <!-- <uses-permission android:name="android.permission.USE_EXACT_ALARM" /> -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Full-screen intent is not used; remove to avoid Play policy issues -->
+    <!-- <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" /> -->
 
     <application
-        android:name="${applicationName}"
-        android:label="sunrise_alarm"
+    android:name="${applicationName}"
+    android:label="Sunrise Alarm"
         android:icon="@mipmap/ic_launcher">
 
         <activity

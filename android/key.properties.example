@@ -1,0 +1,12 @@
+# Copy this file to key.properties and fill values. Do NOT commit key.properties or your .jks file.
+# Keystore used to sign release builds uploaded to Google Play.
+
+storeFile=C:\\path\\to\\your\\keystore.jks
+storePassword=your-store-password
+keyAlias=your-key-alias
+keyPassword=your-key-password
+
+# Hints
+# - Generate a keystore with keytool (Java JDK)
+# - Keep a secure backup of the .jks and passwords
+# - key.properties must be placed next to this example file (android/key.properties)
