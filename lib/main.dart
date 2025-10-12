@@ -188,25 +188,25 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // High-contrast color schemes for better readability in light/dark modes
-    const primaryBlue = Color(0xFF0D47A1); // deep, vivid blue
-    const secondaryOrange = Color(0xFFFF6F00); // strong accent
+    // Primary color per request
+    const primaryBlue = Color(0xFF3795E8);
 
+    // Use primary for both primary/secondary accents to unify look
     final lightScheme = ColorScheme.highContrastLight(
       primary: primaryBlue,
       onPrimary: Colors.white,
-      secondary: secondaryOrange,
-      onSecondary: Colors.black,
+      secondary: primaryBlue,
+      onSecondary: Colors.white,
       surface: Colors.white,
       onSurface: Colors.black,
       error: const Color(0xFFB00020),
       onError: Colors.white,
     );
     final darkScheme = ColorScheme.highContrastDark(
-      primary: const Color(0xFF82B1FF), // bright enough for dark bg
-      onPrimary: Colors.black,
-      secondary: const Color(0xFFFFAB40),
-      onSecondary: Colors.black,
+      primary: primaryBlue,
+      onPrimary: Colors.white,
+      secondary: primaryBlue,
+      onSecondary: Colors.white,
       surface: const Color(0xFF121212),
       onSurface: Colors.white,
       error: const Color(0xFFFF5252),
@@ -250,8 +250,8 @@ class MyApp extends StatelessWidget {
           ),
           outlinedButtonTheme: OutlinedButtonThemeData(
             style: OutlinedButton.styleFrom(
-              side: BorderSide(color: darkScheme.secondary, width: 1.5),
-              foregroundColor: darkScheme.secondary,
+              side: BorderSide(color: darkScheme.primary, width: 1.5),
+              foregroundColor: darkScheme.primary,
             ),
           ),
           appBarTheme: AppBarTheme(

@@ -1,16 +1,22 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:volume_watcher_plus/volume_watcher_plus.dart';
 import 'settings_service.dart';
 
 class RingtoneService {
   static final AudioPlayer _player = AudioPlayer()
     ..setReleaseMode(ReleaseMode.loop);
   static bool _started = false;
+  // Saved system volume to restore after alarm stops
+  static double? _savedSystemVolume;
   // Separate lightweight player for short previews to avoid interfering
   static AudioPlayer? _preview;
   static Timer? _previewTimer;
 
   static Future<void> startWithSettings({int? scheduledEpochMsUtc}) async {
+    // Ensure alarm plays loudly: bump system volume to max, but remember current value to restore on stop.
+    await _maybeBoostSystemVolumeToMax();
+
     final key = await SettingsService.getNotificationSound();
     final assetPath = _mapSoundKeyToAsset(key);
     try {
@@ -67,6 +73,8 @@ class RingtoneService {
   static Future<void> stop() async {
     await _player.stop();
     _started = false;
+    // Restore system volume if we boosted it for the alarm
+    await _maybeRestoreSystemVolume();
   }
 
   static bool get isPlaying => _started;
@@ -129,6 +137,37 @@ class RingtoneService {
       if (identical(_preview, p)) {
         _preview = null;
       }
+    }
+  }
+
+  // Attempt to boost the system volume to maximum for the alarm playback.
+  // This will have effect on Android and iOS as supported by the plugin.
+  // Note: On some devices with DND/silent, system policies may still limit output.
+  static Future<void> _maybeBoostSystemVolumeToMax() async {
+    // Only snapshot once per alarm session
+    if (_savedSystemVolume != null) return;
+    try {
+      final current = await VolumeWatcherPlus.getCurrentVolume;
+      final max = await VolumeWatcherPlus.getMaxVolume;
+      _savedSystemVolume = current;
+      // Set to max if not already
+      if (current < max) {
+        await VolumeWatcherPlus.setVolume(max);
+      }
+    } catch (_) {
+      // Ignore failures; playback can still proceed at existing volume.
+    }
+  }
+
+  // Restore the system volume back to what it was before the alarm.
+  static Future<void> _maybeRestoreSystemVolume() async {
+    final saved = _savedSystemVolume;
+    if (saved == null) return;
+    _savedSystemVolume = null;
+    try {
+      await VolumeWatcherPlus.setVolume(saved);
+    } catch (_) {
+      // Ignore failures; nothing we can do here.
     }
   }
 }

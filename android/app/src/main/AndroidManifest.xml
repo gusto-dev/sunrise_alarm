@@ -10,6 +10,9 @@
     <!-- (알림) 알람 표시 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- (볼륨 조절) 알람 시 시스템 볼륨을 크게 설정하기 위해 필요 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <!-- (정확 알람/절전 중 깨우기) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Android 14 대안: 심사 대상일 수 있음 -->
