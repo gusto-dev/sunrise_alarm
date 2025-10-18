@@ -15,6 +15,8 @@ import 'services/alarm_service.dart';
 import 'widgets/stop_overlay.dart';
 // Show our in-app modal overlay on alarm interactions (no system alert)
 import 'package:google_fonts/google_fonts.dart';
+import 'package:workmanager/workmanager.dart';
+import 'services/repeat_prefs.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 final notifications = FlutterLocalNotificationsPlugin();
@@ -149,6 +151,9 @@ Future<void> main() async {
   // 미리 사운드 소스를 준비해, 알림 탭 시 시작 지연/끊김 최소화
   await RingtoneService.ensurePrepared();
 
+  // 백그라운드 작업 초기화: 매일 새벽 자동 보충(선예약)용
+  await Workmanager().initialize(_onBackgroundTask);
+
   // Load saved user preferences before building UI
   final langPref = await SettingsService.getLanguageOverride();
   if (langPref != 'system') {
@@ -181,6 +186,38 @@ Future<void> main() async {
     // Show modal stop overlay on launch via notification
     StopOverlay.show(alarmId: id);
   }
+}
+
+// 백그라운드에서 호출되는 작업: 예약 선행분이 부족하면 앞으로 horizon까지 채운다.
+@pragma('vm:entry-point')
+void _onBackgroundTask() {
+  Workmanager().executeTask((task, inputData) async {
+    try {
+      // 선예약 설정이 켜져 있는지 확인
+      if (!await RepeatPrefs.isEnabled()) return true;
+      final off = await RepeatPrefs.offsetMinutes();
+      final (lat, lon) = await RepeatPrefs.coords();
+      final tzName = await RepeatPrefs.tzName();
+      if (lat == null || lon == null || tzName == null) return true;
+      final loc = tz.getLocation(tzName);
+      // 현재 펜딩 개수가 horizon보다 적으면 보충
+      final horizon = await RepeatPrefs.horizonDays();
+      final pending = await notifications.pendingNotificationRequests();
+      if (pending.length < horizon) {
+        await AlarmService.scheduleSunriseSeries(
+          days: horizon,
+          offsetMinutes: off,
+          lat: lat,
+          lon: lon,
+          location: loc,
+          title: '일출 알람',
+          body: '좋은 하루 시작해요 ☀️',
+          startLocalDate: tz.TZDateTime.now(loc),
+        );
+      }
+    } catch (_) {}
+    return true;
+  });
 }
 
 class MyApp extends StatelessWidget {

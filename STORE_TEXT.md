@@ -45,12 +45,12 @@ Privacy: https://gusto-dev.github.io/sunrise_alarm/privacy.html
 ## Data Safety (copy-ready answers)
 
 - Data collection: Yes
-	- Location: Precise location — Collected
-	- Purpose: App functionality (compute sunrise and schedule alarms)
-	- Optional: No (required for core functionality)
+  - Location: Precise location — Collected
+  - Purpose: App functionality (compute sunrise and schedule alarms)
+  - Optional: No (required for core functionality)
 - Data sharing: Yes
-	- Location: Shared to the sunrise-sunset.org API strictly to fetch sunrise time
-	- Advertising or third-party purposes: No
+  - Location: Shared to the sunrise-sunset.org API strictly to fetch sunrise time
+  - Advertising or third-party purposes: No
 - Data linked to identity: No (we do not collect identifiers)
 - Data sold: No
 - Security practices: Data is encrypted in transit (HTTPS)

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'settings_service.dart';
 import 'dart:typed_data';
 import 'foreground_alarm_overlay.dart';
+import 'sunrise_service.dart';
 
 class ScheduledAlarm {
   final int id;
@@ -429,6 +430,59 @@ class AlarmService {
     );
     await _saveList(items);
     return id;
+  }
+
+  /// 일출 기준으로 [days]일 동안 매일 한 번씩 알람을 예약합니다.
+  /// 각 날짜에 대해 위치 타임존의 '그 날짜' 일출 시각을 조회하고 [offsetMinutes]을 적용합니다.
+  /// 이미 지난 시각은 건너뜁니다. 생성된 알람 ID 목록을 반환합니다.
+  static Future<List<int>> scheduleSunriseSeries({
+    required int days,
+    required int offsetMinutes,
+    required double lat,
+    required double lon,
+    required tz.Location location,
+    String? title,
+    String? body,
+    tz.TZDateTime? startLocalDate,
+  }) async {
+    final created = <int>[];
+    final nowLocal = tz.TZDateTime.now(location);
+    // 시작 기준: 위치의 '오늘 00:00' 또는 지정된 시작 현지 날짜 00:00
+    var baseLocalDate = startLocalDate != null
+        ? tz.TZDateTime(
+            location,
+            startLocalDate.year,
+            startLocalDate.month,
+            startLocalDate.day,
+          )
+        : tz.TZDateTime(location, nowLocal.year, nowLocal.month, nowLocal.day);
+    for (var i = 0; i < days; i++) {
+      final dayLocal = baseLocalDate.add(Duration(days: i));
+      // SunriseService.fetchSunriseUtc는 "그 날짜의 일출"을 반환 (UTC)
+      DateTime sunriseUtc;
+      try {
+        sunriseUtc = await SunriseService.fetchSunriseUtc(
+          lat,
+          lon,
+          DateTime(dayLocal.year, dayLocal.month, dayLocal.day),
+        );
+      } catch (_) {
+        // 이 날짜는 건너뜀
+        continue;
+      }
+      var sunriseLocal = tz.TZDateTime.from(sunriseUtc, location);
+      var scheduled = sunriseLocal.add(Duration(minutes: offsetMinutes));
+      // 과거라면 건너뜀
+      if (!scheduled.isAfter(nowLocal)) continue;
+      final id = await scheduleNew(
+        scheduled,
+        location: location,
+        title: title,
+        body: body,
+      );
+      created.add(id);
+    }
+    return created;
   }
 
   /// 지정된 시간([localTime])을 주어진 [location] 시간대로 해석하여 예약

@@ -17,6 +17,8 @@ import '../services/settings_service.dart';
 import '../services/alarm_service.dart';
 // StopOverlay no longer directly triggered from AppBar
 import '../services/foreground_alarm_overlay.dart';
+import 'package:workmanager/workmanager.dart';
+import '../services/repeat_prefs.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -390,21 +392,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await _prepare();
       if (nextSunriseLocal == null || _targetLoc == null) return;
     }
-    // 일출 시각 기준으로 다음 알람 예약 (기존 알람은 대체)
+    // 일출 시각 기준으로 다음 며칠치를 한 번에 예약 (기본 7일)
     final res = _computeScheduleNormalized(
       nextSunriseLocal!,
       _targetLoc!,
       _offsetMinutes,
     );
     try {
-      await AlarmService.cancel();
-      await AlarmService.scheduleAtZoned(
-        res.scheduled,
-        _targetLoc!,
+      await AlarmService.cancelAll();
+      const seriesDays = 365; // 매일 계속 울리도록 1년치 선예약
+      // 위치 좌표는 _lastPosition 저장값 사용 (init에서 확보)
+      if (_lastPosition == null) {
+        // 위치가 아직 없으면 준비 재시도
+        await _prepare();
+        if (_lastPosition == null) throw Exception('No location available');
+      }
+      await AlarmService.scheduleSunriseSeries(
+        days: seriesDays,
+        offsetMinutes: _offsetMinutes,
+        lat: _lastPosition!.latitude,
+        lon: _lastPosition!.longitude,
+        location: _targetLoc!,
         title: l10n.notifSunriseTitle,
         body: l10n.notifSunriseBody,
       );
-      // Arm foreground overlay timer so if app stays open, the modal pops at ring time
+      // 무기한을 위해 백그라운드 보충 작업 활성화 및 사용자 설정 저장
+      await RepeatPrefs.save(
+        enabled: true,
+        offsetMinutes: _offsetMinutes,
+        lat: _lastPosition!.latitude,
+        lon: _lastPosition!.longitude,
+        tzName: _targetLoc!.name,
+        horizonDays: seriesDays,
+      );
+      await Workmanager().registerPeriodicTask(
+        'sunriseTopUp',
+        'sunriseTopUp',
+        frequency: const Duration(hours: 24),
+        initialDelay: const Duration(hours: 6),
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+        constraints: Constraints(networkType: NetworkType.connected),
+        backoffPolicy: BackoffPolicy.exponential,
+        backoffPolicyDelay: const Duration(minutes: 30),
+      );
+      // 오늘 예약 시각 기준으로 오버레이 타이머(앱이 열려 있을 때만 유효)
       ForegroundAlarmOverlay.arm(res.scheduled, alarmId: 2025);
       if (!mounted) return;
       setState(() {
@@ -483,8 +514,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 cancelText: AppLocalizations.of(context).keep,
               );
               if (!ok) return;
-              await AlarmService.cancel();
+              await AlarmService.cancelAll();
               ForegroundAlarmOverlay.cancel();
+              // 무기한 보충 비활성화 및 작업 취소
+              await RepeatPrefs.disable();
+              await Workmanager().cancelByUniqueName('sunriseTopUp');
               if (!mounted) return;
               setState(() {
                 _lastScheduledAlarmLocal = null;
