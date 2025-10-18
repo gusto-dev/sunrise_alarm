@@ -3,6 +3,8 @@ import '../services/ringtone_service.dart';
 import '../services/alarm_service.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart';
+import 'package:workmanager/workmanager.dart';
+import '../services/repeat_prefs.dart';
 
 class StopOverlay {
   static OverlayEntry? _entry;
@@ -57,24 +59,46 @@ class StopOverlay {
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 16),
-                          FilledButton(
-                            onPressed: () async {
-                              // Stop sound and cancel alarm(s), then remove overlay
-                              try {
-                                await RingtoneService.stop();
-                              } catch (_) {}
-                              if (cancelScheduled) {
-                                try {
-                                  if (alarmId != null) {
-                                    await AlarmService.cancelById(alarmId);
-                                  } else {
-                                    await AlarmService.cancelAll();
-                                  }
-                                } catch (_) {}
-                              }
-                              hide();
-                            },
-                            child: Text(l10n.alarmActionStop),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton(
+                                  onPressed: () async {
+                                    // Stop only current alarm (keep daily repeat)
+                                    try {
+                                      await RingtoneService.stop();
+                                    } catch (_) {}
+                                    if (cancelScheduled) {
+                                      try {
+                                        if (alarmId != null) {
+                                          await AlarmService.cancelById(alarmId);
+                                        } else {
+                                          await AlarmService.cancelAll();
+                                        }
+                                      } catch (_) {}
+                                    }
+                                    hide();
+                                  },
+                                  child: Text(l10n.alarmActionStop),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () async {
+                                    // Turn off daily repeat entirely and cancel all background tasks
+                                    try { await RingtoneService.stop(); } catch (_) {}
+                                    try { await AlarmService.cancelAll(); } catch (_) {}
+                                    try { await RepeatPrefs.disable(); } catch (_) {}
+                                    try { await Workmanager().cancelByUniqueName('sunriseTopUp'); } catch (_) {}
+                                    try { await Workmanager().cancelAll(); } catch (_) {}
+                                    hide();
+                                  },
+                                  // Reuse delete label for clarity
+                                  child: Text(l10n.delete),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
