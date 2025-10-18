@@ -194,16 +194,42 @@ void _onBackgroundTask() {
   Workmanager().executeTask((task, inputData) async {
     try {
       // 선예약 설정이 켜져 있는지 확인
-      if (!await RepeatPrefs.isEnabled()) return true;
+      if (!await RepeatPrefs.isEnabled()) {
+        debugPrint('[TopUp] Abort: repeat disabled');
+        return true;
+      }
+      if (await RepeatPrefs.isPausedNow()) {
+        debugPrint('[TopUp] Abort: in pause window after disable');
+        return true;
+      }
+      final genAtStart = await RepeatPrefs.generation();
       final off = await RepeatPrefs.offsetMinutes();
       final (lat, lon) = await RepeatPrefs.coords();
       final tzName = await RepeatPrefs.tzName();
-      if (lat == null || lon == null || tzName == null) return true;
+      if (lat == null || lon == null || tzName == null) {
+        debugPrint('[TopUp] Abort: coordinates/zone cleared');
+        return true;
+      }
       final loc = tz.getLocation(tzName);
       // 현재 펜딩 개수가 horizon보다 적으면 보충
       final horizon = await RepeatPrefs.horizonDays();
       final pending = await notifications.pendingNotificationRequests();
+      // 최종 직전에 다시 한 번 확인 + 세대 토큰이 바뀌었는지 확인
+      if (!await RepeatPrefs.isEnabled()) {
+        debugPrint('[TopUp] Abort (final): repeat disabled');
+        return true;
+      }
+      if (await RepeatPrefs.isPausedNow()) {
+        debugPrint('[TopUp] Abort (final): in pause window');
+        return true;
+      }
+      final genNow = await RepeatPrefs.generation();
+      if (genNow != genAtStart) {
+        debugPrint('[TopUp] Abort: generation changed');
+        return true; // 설정이 도중에 바뀜
+      }
       if (pending.length < horizon) {
+        debugPrint('[TopUp] Refill: pending=${pending.length} < horizon=$horizon');
         await AlarmService.scheduleSunriseSeries(
           days: horizon,
           offsetMinutes: off,
