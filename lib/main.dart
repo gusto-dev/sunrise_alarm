@@ -17,6 +17,7 @@ import 'widgets/stop_overlay.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/repeat_prefs.dart';
+import 'utils/dev_log.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 final notifications = FlutterLocalNotificationsPlugin();
@@ -195,11 +196,11 @@ void _onBackgroundTask() {
     try {
       // 선예약 설정이 켜져 있는지 확인
       if (!await RepeatPrefs.isEnabled()) {
-        debugPrint('[TopUp] Abort: repeat disabled');
+        devLogTopUp('[TopUp] Abort: repeat disabled');
         return true;
       }
       if (await RepeatPrefs.isPausedNow()) {
-        debugPrint('[TopUp] Abort: in pause window after disable');
+        devLogTopUp('[TopUp] Abort: in pause window after disable');
         return true;
       }
       final genAtStart = await RepeatPrefs.generation();
@@ -207,7 +208,7 @@ void _onBackgroundTask() {
       final (lat, lon) = await RepeatPrefs.coords();
       final tzName = await RepeatPrefs.tzName();
       if (lat == null || lon == null || tzName == null) {
-        debugPrint('[TopUp] Abort: coordinates/zone cleared');
+        devLogTopUp('[TopUp] Abort: coordinates/zone cleared');
         return true;
       }
       final loc = tz.getLocation(tzName);
@@ -216,20 +217,22 @@ void _onBackgroundTask() {
       final pending = await notifications.pendingNotificationRequests();
       // 최종 직전에 다시 한 번 확인 + 세대 토큰이 바뀌었는지 확인
       if (!await RepeatPrefs.isEnabled()) {
-        debugPrint('[TopUp] Abort (final): repeat disabled');
+        devLogTopUp('[TopUp] Abort (final): repeat disabled');
         return true;
       }
       if (await RepeatPrefs.isPausedNow()) {
-        debugPrint('[TopUp] Abort (final): in pause window');
+        devLogTopUp('[TopUp] Abort (final): in pause window');
         return true;
       }
       final genNow = await RepeatPrefs.generation();
       if (genNow != genAtStart) {
-        debugPrint('[TopUp] Abort: generation changed');
+        devLogTopUp('[TopUp] Abort: generation changed');
         return true; // 설정이 도중에 바뀜
       }
       if (pending.length < horizon) {
-        debugPrint('[TopUp] Refill: pending=${pending.length} < horizon=$horizon');
+        devLogTopUp(
+          '[TopUp] Refill: pending=${pending.length} < horizon=$horizon',
+        );
         await AlarmService.scheduleSunriseSeries(
           days: horizon,
           offsetMinutes: off,

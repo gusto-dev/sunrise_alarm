@@ -38,9 +38,10 @@ class RepeatPrefs {
     await p.remove(_lonKey);
     await p.remove(_tzKey);
     await p.remove(_horizonDaysKey);
-    // Set a short pause window to avoid immediate re-scheduling by any in-flight worker
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    await p.setInt(_pauseUntilKey, nowMs + const Duration(minutes: 2).inMilliseconds);
+    // Block any scheduling until user manually re-enables repeat
+    // Set pauseUntil to a far-future timestamp; cleared on next save()
+    final farFuture = DateTime(2100, 1, 1).millisecondsSinceEpoch;
+    await p.setInt(_pauseUntilKey, farFuture);
     await _bumpGeneration(p);
   }
 

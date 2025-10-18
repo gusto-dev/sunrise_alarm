@@ -19,6 +19,9 @@ import '../services/alarm_service.dart';
 import '../services/foreground_alarm_overlay.dart';
 import 'package:workmanager/workmanager.dart';
 import '../services/repeat_prefs.dart';
+import '../utils/dev_log.dart';
+import '../utils/constants.dart';
+import '../services/alarm_refactor_helpers.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -53,6 +56,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _ticker;
   // 일출 기준 예약 오프셋 (분). 음수=전, 양수=후
   int _offsetMinutes = 0; // 기본: 일출 기준(오프셋 0)
+  // 예약 진행 중 플래그(이중 탭 방지)
+  bool _reserving = false;
 
   bool _isInKorea(double lat, double lon) {
     return lat >= 33.0 && lat <= 39.5 && lon >= 124.5 && lon <= 132.0;
@@ -166,6 +171,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 저장된 예약(레거시 단일 ID 우선)을 읽어와 로컬 시간으로 표시
   Future<void> _loadReservedFromStorage() async {
     try {
+      // 반복이 비활성화되었거나 일시정지 상태면 카드 숨김
+      if (!await RepeatPrefs.isEnabled() || await RepeatPrefs.isPausedNow()) {
+        if (!mounted) return;
+        setState(() => _lastScheduledAlarmLocal = null);
+        return;
+      }
       final items = await AlarmService.list();
       if (items.isEmpty) {
         if (!mounted) return;
@@ -178,16 +189,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final legacy = items.where((e) => e.id == 2025).toList();
       final nowUtc = DateTime.now().toUtc();
       final candidates = legacy.isNotEmpty ? legacy : items;
-      // 가장 가까운 미래 시각 선택
-      candidates.sort((a, b) => a.scheduled.compareTo(b.scheduled));
-      ScheduledAlarm? pick;
-      for (final it in candidates) {
-        if (it.scheduled.isAfter(nowUtc)) {
-          pick = it;
-          break;
-        }
+      // 미래에 예약된 항목만 고려
+      final future =
+          candidates.where((e) => e.scheduled.isAfter(nowUtc)).toList()
+            ..sort((a, b) => a.scheduled.compareTo(b.scheduled));
+      if (future.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _lastScheduledAlarmLocal = null;
+        });
+        return;
       }
-      pick ??= candidates.last; // 모두 과거라면 가장 늦은 것
+      final pick = future.first; // 가장 가까운 미래 시각
 
       // 저장된 tzName을 사용해 로컬 표시 시간 계산
       tz.Location loc;
@@ -374,6 +387,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 통합 버튼으로 기능 대체되어 기존 재예약 메서드는 제거되었습니다.
 
   Future<void> _addNewAlarmFromCurrent() async {
+    debugPrint('[UI] addNewAlarmFromCurrent invoked');
     final l10n = AppLocalizations.of(context);
     // Capture locale upfront to avoid using BuildContext across async gaps
     final localeAtStart = Localizations.localeOf(context);
@@ -399,24 +413,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _offsetMinutes,
     );
     try {
+      // UI는 실제 예약 성공 후에만 반영 (유령 카드 방지)
+      setState(() {
+        _reserving = true;
+      });
       await AlarmService.cancelAll();
-      const seriesDays = 365; // 매일 계속 울리도록 1년치 선예약
+      const seriesDays = 30; // 선예약 지평선(보충 작업이 채움)
       // 위치 좌표는 _lastPosition 저장값 사용 (init에서 확보)
       if (_lastPosition == null) {
         // 위치가 아직 없으면 준비 재시도
         await _prepare();
         if (_lastPosition == null) throw Exception('No location available');
       }
-      await AlarmService.scheduleSunriseSeries(
-        days: seriesDays,
-        offsetMinutes: _offsetMinutes,
-        lat: _lastPosition!.latitude,
-        lon: _lastPosition!.longitude,
-        location: _targetLoc!,
-        title: l10n.notifSunriseTitle,
-        body: l10n.notifSunriseBody,
-      );
-      // 무기한을 위해 백그라운드 보충 작업 활성화 및 사용자 설정 저장
+      // 무기한을 위해 사용자 설정을 먼저 저장하여 pause window 제거 및 상태 확정
       await RepeatPrefs.save(
         enabled: true,
         offsetMinutes: _offsetMinutes,
@@ -425,9 +434,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         tzName: _targetLoc!.name,
         horizonDays: seriesDays,
       );
+      // 즉시 다음 1건만 예약(네트워크 호출 없이 계산값 사용)
+      bool scheduledOne = false;
+      try {
+        await AlarmService.scheduleAtZoned(
+          res.scheduled,
+          _targetLoc!,
+          title: l10n.notifSunriseTitle,
+          body: l10n.notifSunriseBody,
+        );
+        scheduledOne = true;
+      } catch (_) {
+        scheduledOne = false;
+      }
+      // 저장소에 실제로 예약이 기록되었는지 즉시 동기화
+      await _loadReservedFromStorage();
+      if (!scheduledOne) {
+        // 예약 실패 가능성(정확 알람/알림 권한 등)
+        final msg = isKoStart
+            ? '예약된 알람이 없어요. 시스템 설정에서 "정확한 알람"과 알림 권한을 확인해 주세요.'
+            : 'No alarms were scheduled. Please enable "Exact alarms" and notifications in system settings.';
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(msg)));
+        }
+      }
+      // 무기한을 위해 백그라운드 보충 작업 활성화
+      devLogTopUp('[TopUp] registerPeriodicTask requested');
       await Workmanager().registerPeriodicTask(
-        'sunriseTopUp',
-        'sunriseTopUp',
+        WorkTaskNames.topUp,
+        WorkTaskNames.topUp,
         frequency: const Duration(hours: 24),
         initialDelay: const Duration(hours: 6),
         existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
@@ -435,14 +472,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         backoffPolicy: BackoffPolicy.exponential,
         backoffPolicyDelay: const Duration(minutes: 30),
       );
+      // 초기 대량 선예약은 원오프 작업으로 즉시 보충(앱 UI 대기 시간 최소화)
+      try {
+        await Workmanager().registerOneOffTask(
+          '${WorkTaskNames.topUp}Once',
+          WorkTaskNames.topUp,
+          initialDelay: const Duration(seconds: 5),
+          constraints: Constraints(networkType: NetworkType.connected),
+          backoffPolicy: BackoffPolicy.exponential,
+          backoffPolicyDelay: const Duration(minutes: 5),
+        );
+        devLogTopUp('[TopUp] registerOneOffTask requested');
+      } catch (_) {}
       // 오늘 예약 시각 기준으로 오버레이 타이머(앱이 열려 있을 때만 유효)
       ForegroundAlarmOverlay.arm(res.scheduled, alarmId: 2025);
       if (!mounted) return;
-      setState(() {
-        _lastScheduledAlarmLocal = res.scheduled;
-      });
-      showTopToast(context, l10n.alarmReservedToast);
-      // 진단용: 예약된 알림 개수 출력
+      if (scheduledOne) {
+        setState(() {
+          // 저장소 동기화에서 값을 못 불러왔을 경우에만 즉시 계산값 유지
+          _lastScheduledAlarmLocal = _lastScheduledAlarmLocal ?? res.scheduled;
+        });
+      } else {
+        // 스케줄 실패/차단 시에는 예약 카드 표시를 비웁니다
+        if (mounted) {
+          setState(() {
+            _lastScheduledAlarmLocal = null;
+          });
+        }
+      }
+      // 예약 건수와 함께 토스트로 피드백 제공
+      try {
+        final cnt = await AlarmService.pendingCount();
+        if (!mounted) return;
+        showTopToast(
+          context,
+          scheduledOne
+              ? '${l10n.alarmReservedToast} ($cnt)'
+              : l10n.alarmReservedToast,
+        );
+      } catch (_) {
+        if (!mounted) return;
+        showTopToast(context, l10n.alarmReservedToast);
+      }
+      // 진단용 로그는 유지
       try {
         final cnt = await AlarmService.pendingCount();
         // ignore: avoid_print
@@ -460,6 +532,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _reserving = false);
+      }
     }
   }
 
@@ -514,14 +590,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 cancelText: AppLocalizations.of(context).keep,
               );
               if (!ok) return;
-              await AlarmService.cancelAll();
-              ForegroundAlarmOverlay.cancel();
-              // 무기한 보충 비활성화 및 작업 취소
+              // 순서: 1) 선예약 설정 비활성화 → 2) 백그라운드 작업 취소 → 3) 모든 알람 취소
               await RepeatPrefs.disable();
-              await Workmanager().cancelByUniqueName('sunriseTopUp');
+              debugPrint('[Repeat] Disabled by user (card delete)');
+              await AlarmCleanup.disableRepeatAndCancelAll(
+                dismissOverlay: false,
+              );
+              ForegroundAlarmOverlay.cancel();
               if (!mounted) return;
               setState(() {
                 _lastScheduledAlarmLocal = null;
+                _reserving = false; // 버튼 비활성화 상태 해제
               });
               showTopToast(
                 context,
@@ -782,7 +861,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: _busy
+                onPressed: (_busy || _reserving)
                     ? null
                     : () async {
                         // Confirm before scheduling

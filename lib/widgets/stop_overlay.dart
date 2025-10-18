@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import '../services/ringtone_service.dart';
-import '../services/alarm_service.dart';
 import '../l10n/app_localizations.dart';
 import '../main.dart';
-import 'package:workmanager/workmanager.dart';
 import '../services/repeat_prefs.dart';
+import '../services/alarm_refactor_helpers.dart';
 
 class StopOverlay {
   static OverlayEntry? _entry;
@@ -64,19 +63,18 @@ class StopOverlay {
                               Expanded(
                                 child: FilledButton(
                                   onPressed: () async {
-                                    // Stop only current alarm (keep daily repeat)
+                                    // Stop current alarm and also turn off daily repeat entirely
                                     try {
                                       await RingtoneService.stop();
                                     } catch (_) {}
-                                    if (cancelScheduled) {
-                                      try {
-                                        if (alarmId != null) {
-                                          await AlarmService.cancelById(alarmId);
-                                        } else {
-                                          await AlarmService.cancelAll();
-                                        }
-                                      } catch (_) {}
-                                    }
+                                    // Disable repeat and cancel all background tasks first to avoid races
+                                    try {
+                                      await RepeatPrefs.disable();
+                                    } catch (_) {}
+                                    debugPrint(
+                                      '[Repeat] Disabled by user (overlay stop)',
+                                    );
+                                    await AlarmCleanup.disableRepeatAndCancelAll();
                                     hide();
                                   },
                                   child: Text(l10n.alarmActionStop),
@@ -86,15 +84,19 @@ class StopOverlay {
                               Expanded(
                                 child: OutlinedButton(
                                   onPressed: () async {
-                                    // Turn off daily repeat entirely and cancel all background tasks
-                                    try { await RingtoneService.stop(); } catch (_) {}
-                                    try { await AlarmService.cancelAll(); } catch (_) {}
-                                    try { await RepeatPrefs.disable(); } catch (_) {}
-                                    try { await Workmanager().cancelByUniqueName('sunriseTopUp'); } catch (_) {}
-                                    try { await Workmanager().cancelAll(); } catch (_) {}
+                                    // Turn off daily repeat entirely; order to avoid races
+                                    try {
+                                      await RingtoneService.stop();
+                                    } catch (_) {}
+                                    try {
+                                      await RepeatPrefs.disable();
+                                    } catch (_) {}
+                                    debugPrint(
+                                      '[Repeat] Disabled by user (overlay delete)',
+                                    );
+                                    await AlarmCleanup.disableRepeatAndCancelAll();
                                     hide();
                                   },
-                                  // Reuse delete label for clarity
                                   child: Text(l10n.delete),
                                 ),
                               ),

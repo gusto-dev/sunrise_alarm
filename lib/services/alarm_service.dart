@@ -6,9 +6,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'settings_service.dart';
+import 'repeat_prefs.dart';
 import 'dart:typed_data';
 import 'foreground_alarm_overlay.dart';
 import 'sunrise_service.dart';
+import '../utils/dev_log.dart';
 
 class ScheduledAlarm {
   final int id;
@@ -377,6 +379,12 @@ class AlarmService {
     String? title,
     String? body,
   }) async {
+    // Global guard: if repeat was just disabled, avoid any scheduling from in-flight paths
+    if (!await RepeatPrefs.isEnabled() || await RepeatPrefs.isPausedNow()) {
+      devLogSchedule('[Schedule] scheduleNew aborted: disabled/paused');
+      // Still return an ID progression to avoid clashes if called in a loop, but do not schedule
+      return _id; // do NOT increment here to keep consistent IDs; caller shouldn't rely on return
+    }
     final id = await _nextId();
     final loc = location ?? tz.local;
 
@@ -445,6 +453,11 @@ class AlarmService {
     String? body,
     tz.TZDateTime? startLocalDate,
   }) async {
+    // Guard series scheduling when disabled or paused (e.g., right after delete)
+    if (!await RepeatPrefs.isEnabled() || await RepeatPrefs.isPausedNow()) {
+      devLogSchedule('[Schedule] series aborted: disabled/paused');
+      return <int>[];
+    }
     final created = <int>[];
     final nowLocal = tz.TZDateTime.now(location);
     // 시작 기준: 위치의 '오늘 00:00' 또는 지정된 시작 현지 날짜 00:00
